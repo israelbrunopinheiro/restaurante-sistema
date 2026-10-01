@@ -7,11 +7,12 @@ import { errorMessage } from '../components/ui'
  * Pedidos em tempo real.
  *  - 'open':  só os em andamento (novo / preparando / pronto) — usado pela cozinha.
  *  - 'today': os de hoje + qualquer um ainda em andamento — usado na lista de pedidos.
+ *  - 'unpaid': todos os não pagos e não cancelados (de qualquer dia) — usado no caixa.
  *
  * Qualquer mudança em orders/order_items dispara uma recarga (com debounce); além disso há
  * recarga ao voltar para a aba, ao reconectar a internet e a cada 30 s, como rede de segurança.
  */
-export function useOrders(scope: 'open' | 'today') {
+export function useOrders(scope: 'open' | 'today' | 'unpaid') {
   const [orders, setOrders] = useState<OrderWithItems[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -24,10 +25,9 @@ export function useOrders(scope: 'open' | 'today') {
       .from('orders')
       .select('*, order_items(*), dining_tables(label)')
       .order('created_at', { ascending: true })
-    query =
-      scope === 'open'
-        ? query.in('status', OPEN_STATUSES)
-        : query.or(`business_date.eq.${todayInManaus()},status.in.(${OPEN_STATUSES.join(',')})`)
+    if (scope === 'open') query = query.in('status', OPEN_STATUSES)
+    else if (scope === 'unpaid') query = query.is('paid_at', null).neq('status', 'cancelled')
+    else query = query.or(`business_date.eq.${todayInManaus()},status.in.(${OPEN_STATUSES.join(',')})`)
     const { data, error } = await query
     if (id !== requestId.current) return // chegou uma resposta mais nova
     if (error) {

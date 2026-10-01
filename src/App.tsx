@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import PendingApproval from './pages/PendingApproval'
 import NewOrder from './pages/NewOrder'
 import Orders from './pages/Orders'
+import Cash from './pages/Cash'
 import Kitchen from './pages/Kitchen'
 import Menu from './pages/Menu'
 import Settings from './pages/Settings'
@@ -53,6 +54,14 @@ export default function App() {
                 element={
                   <Guard roles={['owner', 'attendant']}>
                     <Orders />
+                  </Guard>
+                }
+              />
+              <Route
+                path="caixa"
+                element={
+                  <Guard roles={['owner', 'attendant']}>
+                    <Cash />
                   </Guard>
                 }
               />

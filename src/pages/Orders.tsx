@@ -136,7 +136,14 @@ export default function Orders() {
                       {o.business_date !== today && ` · ${o.business_date.split('-').reverse().join('/')}`}
                     </div>
                   </div>
-                  <Badge className={statusStyle[o.status]}>{statusLabel[o.status]}</Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge className={statusStyle[o.status]}>{statusLabel[o.status]}</Badge>
+                    {o.status !== 'cancelled' && (
+                      <Badge className={o.paid_at ? 'bg-emerald-600 text-white' : 'bg-orange-100 text-orange-800'}>
+                        {o.paid_at ? '✓ Pago' : 'A receber'}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 <OrderItems items={o.order_items} showPrices />

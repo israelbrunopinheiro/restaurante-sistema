@@ -17,6 +17,7 @@ type OrderRow = {
   id: string
   notes: string | null
   order_number: number
+  paid_at: string | null
   status: Database['public']['Enums']['order_status']
   status_changed_at: string
   subtotal_cents: number
@@ -28,6 +29,78 @@ export type Database = {
   __InternalSupabase: { PostgrestVersion: '14.18' }
   public: {
     Tables: {
+      cash_movements: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: Database['public']['Enums']['cash_movement_kind']
+          reason: string
+          session_id: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: 'cash_movements_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'cash_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      cash_sessions: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          closed_by_name: string | null
+          counted_cents: number | null
+          difference_cents: number | null
+          expected_cash_cents: number | null
+          id: string
+          notes: string | null
+          opened_at: string
+          opened_by: string | null
+          opened_by_name: string
+          opening_cents: number
+          totals: Json | null
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          method: Database['public']['Enums']['payment_method']
+          note: string | null
+          order_id: string
+          session_id: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: 'payments_order_id_fkey'
+            columns: ['order_id']
+            isOneToOne: false
+            referencedRelation: 'orders'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'payments_session_id_fkey'
+            columns: ['session_id']
+            isOneToOne: false
+            referencedRelation: 'cash_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       categories: {
         Row: { active: boolean; created_at: string; id: string; name: string; position: number }
         Insert: { active?: boolean; created_at?: string; id?: string; name: string; position?: number }
@@ -189,6 +262,29 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      add_cash_movement: {
+        Args: {
+          p_amount_cents: number
+          p_kind: Database['public']['Enums']['cash_movement_kind']
+          p_reason: string
+        }
+        Returns: Database['public']['Tables']['cash_movements']['Row']
+      }
+      cash_session_summary: { Args: { p_session_id?: string }; Returns: Json }
+      close_cash_session: {
+        Args: { p_counted_cents: number; p_notes?: string }
+        Returns: Database['public']['Tables']['cash_sessions']['Row']
+      }
+      open_cash_session: {
+        Args: { p_opening_cents: number }
+        Returns: Database['public']['Tables']['cash_sessions']['Row']
+      }
+      pay_orders: { Args: { p_order_ids: string[]; p_payments: Json }; Returns: Json }
+      refund_order: {
+        Args: { p_order_id: string; p_reason: string }
+        Returns: OrderRow
+        SetofOptions: { from: '*'; to: 'orders'; isOneToOne: true; isSetofReturn: false }
+      }
       create_order: {
         Args: {
           p_channel: Database['public']['Enums']['order_channel']
@@ -217,6 +313,8 @@ export type Database = {
     }
     Enums: {
       app_role: 'owner' | 'attendant' | 'kitchen'
+      cash_movement_kind: 'supply' | 'withdrawal'
+      payment_method: 'cash' | 'pix' | 'debit' | 'credit'
       order_channel: 'table' | 'pickup' | 'delivery' | 'whatsapp'
       order_status: 'new' | 'preparing' | 'ready' | 'delivered' | 'cancelled'
     }

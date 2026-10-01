@@ -1,0 +1,238 @@
+/** Rede simulada (Supabase) usada pelos testes de navegador. */
+import type { Page, Route } from '@playwright/test'
+
+export const REF = 'arrbtzafwluqyghvzudx'
+export const USER_ID = '11111111-1111-1111-1111-111111111111'
+
+export type Role = 'owner' | 'attendant' | 'kitchen'
+
+const T0 = '2026-10-01T10:00:00Z'
+export const category = { id: 'c1', name: 'Pratos', position: 0, active: true, created_at: T0 }
+export const products = [
+  { id: 'p1', category_id: 'c1', name: 'Feijoada', description: 'Com arroz e farofa', price_cents: 3500, active: true, position: 0, created_at: T0, updated_at: T0 },
+  { id: 'p2', category_id: 'c1', name: 'Suco de cupuaçu', description: null, price_cents: 800, active: true, position: 1, created_at: T0, updated_at: T0 },
+]
+export const tables = [
+  { id: 't1', label: 'Mesa 1', seats: 4, active: true, created_at: T0 },
+  { id: 't2', label: 'Mesa 2', seats: 4, active: true, created_at: T0 },
+  { id: 't10', label: 'Mesa 10', seats: 4, active: true, created_at: T0 },
+]
+
+export const seedOrder = {
+  id: 'o-seed', business_date: '2026-10-01', order_number: 7, channel: 'table', status: 'new',
+  dining_table_id: 't2', customer_name: null, customer_phone: null, delivery_address: null, notes: 'Cliente com pressa',
+  subtotal_cents: 3500, delivery_fee_cents: 0, total_cents: 3500, cancel_reason: null, created_by: USER_ID, paid_at: null,
+  created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status_changed_at: new Date().toISOString(),
+  order_items: [{ id: 'i1', order_id: 'o-seed', product_id: 'p1', product_name: 'Feijoada', unit_price_cents: 3500, quantity: 2, notes: 'sem cebola', created_at: new Date().toISOString() }],
+  dining_tables: { label: 'Mesa 2' },
+}
+
+/** Pedido de mesa já pronto, ainda não pago. */
+export function tableOrder(id: string, number: number, totalCents: number, minutesAgo: number, tableId = 't1') {
+  const at = new Date(Date.now() - minutesAgo * 60000).toISOString()
+  return {
+    ...seedOrder, id, order_number: number, status: 'ready', notes: null, dining_table_id: tableId,
+    dining_tables: { label: tables.find((t) => t.id === tableId)!.label },
+    subtotal_cents: totalCents, total_cents: totalCents, created_at: at, updated_at: at, status_changed_at: at,
+    order_items: [{ id: `${id}-i`, order_id: id, product_id: 'p1', product_name: 'Feijoada', unit_price_cents: totalCents, quantity: 1, notes: null, created_at: at }],
+  }
+}
+
+type Json = Record<string, unknown>
+export type Calls = { rpc: { name: string; body: Json }[] }
+
+type CashOptions = { open?: boolean; opening_cents?: number }
+
+export async function setup(
+  page: Page,
+  opts: { role: Role; active?: boolean; orders?: unknown[]; cash?: CashOptions },
+) {
+  const calls: Calls = { rpc: [] }
+  const orders = (opts.orders ? structuredClone(opts.orders) : []) as Json[] // cópia: cada teste começa do zero
+  const pageErrors: string[] = []
+  page.on('pageerror', (e) => pageErrors.push(e.message))
+
+  // ───── estado do caixa simulado ─────
+  let session: Json | null = opts.cash?.open
+    ? { id: 's1', opened_at: new Date().toISOString(), opened_by: USER_ID, opened_by_name: 'Ana Teste', opening_cents: opts.cash.opening_cents ?? 10000,
+        closed_at: null, closed_by: null, closed_by_name: null, expected_cash_cents: null, counted_cents: null, difference_cents: null, totals: null, notes: null }
+    : null
+  const closedSessions: Json[] = []
+  const payments: Json[] = []
+  const movements: Json[] = []
+
+  const sumBy = (rows: Json[], pred: (r: Json) => boolean) =>
+    rows.filter(pred).reduce((s, r) => s + (r.amount_cents as number), 0)
+  const totals = () => {
+    const cash = sumBy(payments, (p) => p.method === 'cash')
+    const pix = sumBy(payments, (p) => p.method === 'pix')
+    const debit = sumBy(payments, (p) => p.method === 'debit')
+    const credit = sumBy(payments, (p) => p.method === 'credit')
+    const sup = sumBy(movements, (m) => m.kind === 'supply')
+    const wd = sumBy(movements, (m) => m.kind === 'withdrawal')
+    const opening = (session?.opening_cents as number) ?? 0
+    return {
+      opening_cents: opening, cash_cents: cash, pix_cents: pix, debit_cents: debit, credit_cents: credit,
+      received_cents: cash + pix + debit + credit, supplies_cents: sup, withdrawals_cents: wd,
+      expected_cash_cents: opening + cash + sup - wd,
+    }
+  }
+  const orderEmbed = (id: string) => {
+    const o = orders.find((x) => x.id === id) as Json
+    return { order_number: o.order_number, channel: o.channel, customer_name: o.customer_name, dining_tables: o.dining_tables }
+  }
+
+  await page.addInitScript(
+    ([ref, uid]) => {
+      localStorage.setItem(
+        `sb-${ref}-auth-token`,
+        JSON.stringify({
+          access_token: 'fake.access.token', refresh_token: 'fake-refresh', token_type: 'bearer', expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: uid, aud: 'authenticated', role: 'authenticated', email: 'teste@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-10-01T10:00:00Z' },
+        }),
+      )
+    },
+    [REF, USER_ID],
+  )
+
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
+  const json = (route: Route, body: unknown, status = 200) =>
+    route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const fail = (route: Route, message: string) => json(route, { code: '22023', message, details: null, hint: null }, 400)
+
+  await page.route(/\/realtime\/v1\//, (r) => r.abort())
+  await page.route(/\/auth\/v1\//, (r) => (r.request().method() === 'OPTIONS' ? r.fulfill({ status: 204, headers: cors }) : json(r, {})))
+
+  await page.route(/\/rest\/v1\//, async (route) => {
+    const req = route.request()
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    const url = new URL(req.url())
+    const name = url.pathname.split('/rest/v1/')[1]
+
+    if (name.startsWith('rpc/')) {
+      const fn = name.slice(4)
+      const body = (req.postDataJSON() ?? {}) as Json
+      calls.rpc.push({ name: fn, body })
+
+      if (fn === 'create_order') {
+        const items = body.p_items as { product_id: string; quantity: number; notes: string | null }[]
+        const order = {
+          id: `o${orders.length + 1}`, business_date: '2026-10-01', order_number: orders.length + 1,
+          channel: body.p_channel, status: 'new', dining_table_id: body.p_dining_table_id ?? null,
+          customer_name: body.p_customer_name ?? null, customer_phone: body.p_customer_phone ?? null,
+          delivery_address: body.p_delivery_address ?? null, notes: body.p_notes ?? null,
+          subtotal_cents: 0, delivery_fee_cents: 0, total_cents: 0, cancel_reason: null, created_by: USER_ID, paid_at: null,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status_changed_at: new Date().toISOString(),
+          order_items: items.map((it, i) => {
+            const p = products.find((x) => x.id === it.product_id)!
+            return { id: `i${orders.length}-${i}`, order_id: `o${orders.length + 1}`, product_id: p.id, product_name: p.name, unit_price_cents: p.price_cents, quantity: it.quantity, notes: it.notes, created_at: new Date().toISOString() }
+          }),
+          dining_tables: tables.find((t) => t.id === body.p_dining_table_id) ? { label: tables.find((t) => t.id === body.p_dining_table_id)!.label } : null,
+        }
+        orders.push(order)
+        return json(route, order)
+      }
+      if (fn === 'set_order_status') {
+        const o = orders.find((x) => x.id === body.p_order_id) as Json
+        o.status = body.p_status
+        o.status_changed_at = new Date().toISOString()
+        return json(route, o)
+      }
+
+      // ───── caixa ─────
+      if (fn === 'cash_session_summary') return json(route, session ? { session, totals: totals() } : null)
+      if (fn === 'open_cash_session') {
+        if (session) return fail(route, 'Já existe um caixa aberto. Feche-o antes de abrir outro.')
+        session = { id: 's1', opened_at: new Date().toISOString(), opened_by: USER_ID, opened_by_name: 'Ana Teste', opening_cents: body.p_opening_cents,
+          closed_at: null, closed_by: null, closed_by_name: null, expected_cash_cents: null, counted_cents: null, difference_cents: null, totals: null, notes: null }
+        return json(route, session)
+      }
+      if (fn === 'add_cash_movement') {
+        if (!session) return fail(route, 'Abra o caixa primeiro.')
+        const m = { id: `m${movements.length + 1}`, session_id: 's1', kind: body.p_kind, amount_cents: body.p_amount_cents, reason: body.p_reason, created_by: USER_ID, created_at: new Date().toISOString() }
+        movements.push(m)
+        return json(route, m)
+      }
+      if (fn === 'pay_orders') {
+        if (!session) return fail(route, 'Abra o caixa antes de receber pagamentos.')
+        const ids = body.p_order_ids as string[]
+        const pays = (body.p_payments as { method: string; amount_cents: number }[]).map((p) => ({ ...p }))
+        const targets = ids.map((id) => orders.find((o) => o.id === id) as Json)
+        const due = targets.reduce((s, o) => s + (o.total_cents as number), 0)
+        const sum = pays.reduce((s, p) => s + p.amount_cents, 0)
+        if (sum !== due) return fail(route, `Os pagamentos somam ${sum}, mas a conta é ${due}.`)
+        let i = 0
+        for (const o of targets) {
+          let need = o.total_cents as number
+          while (need > 0) {
+            while (pays[i].amount_cents === 0) i++
+            const take = Math.min(need, pays[i].amount_cents)
+            payments.push({ id: `pay${payments.length + 1}`, session_id: 's1', order_id: o.id, method: pays[i].method, amount_cents: take, note: null, created_by: USER_ID, created_at: new Date().toISOString() })
+            pays[i].amount_cents -= take
+            need -= take
+          }
+          o.paid_at = new Date().toISOString()
+        }
+        return json(route, { orders: targets.length, total_cents: due })
+      }
+      if (fn === 'refund_order') {
+        if (opts.role !== 'owner') return json(route, { code: '42501', message: 'Só o dono pode estornar pagamentos.' }, 403)
+        const o = orders.find((x) => x.id === body.p_order_id) as Json
+        const byMethod = new Map<string, number>()
+        for (const p of payments.filter((p) => p.order_id === o.id)) byMethod.set(p.method as string, (byMethod.get(p.method as string) ?? 0) + (p.amount_cents as number))
+        for (const [method, amt] of byMethod) if (amt !== 0) payments.push({ id: `pay${payments.length + 1}`, session_id: 's1', order_id: o.id, method, amount_cents: -amt, note: body.p_reason, created_by: USER_ID, created_at: new Date().toISOString() })
+        o.paid_at = null
+        return json(route, o)
+      }
+      if (fn === 'close_cash_session') {
+        if (!session) return fail(route, 'Não há caixa aberto.')
+        const t = totals()
+        const diff = (body.p_counted_cents as number) - t.expected_cash_cents
+        if (diff !== 0 && !body.p_notes) return fail(route, 'Há uma diferença no caixa. Explique o motivo nas observações.')
+        session = { ...session, closed_at: new Date().toISOString(), closed_by: USER_ID, closed_by_name: 'Ana Teste', expected_cash_cents: t.expected_cash_cents,
+          counted_cents: body.p_counted_cents, difference_cents: diff, totals: t, notes: body.p_notes ?? null }
+        const closed = session
+        closedSessions.push(closed)
+        session = null
+        return json(route, closed)
+      }
+      return json(route, { message: 'rpc desconhecida' }, 404)
+    }
+
+    switch (name) {
+      case 'profiles':
+        return json(route, [{ id: USER_ID, full_name: 'Ana Teste', role: opts.role, active: opts.active ?? true, created_at: T0 }])
+      case 'settings':
+        return json(route, [{ id: true, restaurant_name: "Cordeiro's Refeições", delivery_fee_cents: 500, updated_at: T0 }])
+      case 'categories':
+        return json(route, [category])
+      case 'products':
+        return json(route, products)
+      case 'dining_tables':
+        return json(route, tables)
+      case 'cash_movements':
+        return json(route, [...movements].reverse())
+      case 'payments':
+        return json(route, [...payments].reverse().map((p) => ({ ...p, orders: orderEmbed(p.order_id as string) })))
+      case 'cash_sessions':
+        return json(route, [...closedSessions].reverse())
+      case 'orders': {
+        let list = orders
+        const status = url.searchParams.get('status')
+        if (status?.startsWith('in.(')) {
+          const wanted = status.slice(4, -1).split(',')
+          list = list.filter((o) => wanted.includes(o.status as string))
+        } else if (status?.startsWith('neq.')) {
+          list = list.filter((o) => o.status !== status.slice(4))
+        }
+        if (url.searchParams.get('paid_at') === 'is.null') list = list.filter((o) => o.paid_at === null)
+        return json(route, list)
+      }
+      default:
+        return json(route, [])
+    }
+  })
+
+  return { calls, orders, payments, movements, pageErrors }
+}

@@ -6,6 +6,7 @@ import { roleLabel } from '../lib/orders'
 const tabs: { to: string; label: string; roles: AppRole[] }[] = [
   { to: '/novo-pedido', label: 'Novo pedido', roles: ['owner', 'attendant'] },
   { to: '/pedidos', label: 'Pedidos', roles: ['owner', 'attendant'] },
+  { to: '/caixa', label: 'Caixa', roles: ['owner', 'attendant'] },
   { to: '/cozinha', label: 'Cozinha', roles: ['owner', 'kitchen'] },
   { to: '/cardapio', label: 'Cardápio', roles: ['owner'] },
   { to: '/configuracoes', label: 'Configurações', roles: ['owner'] },

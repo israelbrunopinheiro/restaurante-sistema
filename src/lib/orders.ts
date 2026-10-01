@@ -48,8 +48,15 @@ export const roleLabel: Record<AppRole, string> = {
   kitchen: 'Cozinha',
 }
 
+type TitleSource = {
+  channel: OrderChannel
+  customer_name: string | null
+  customer_phone?: string | null
+  dining_tables: { label: string } | null
+}
+
 /** "Mesa 3", "Retirada · Maria", "Delivery · João", "WhatsApp · (92) 99999-0000" */
-export function orderTitle(o: OrderWithItems): string {
+export function orderTitle(o: TitleSource): string {
   switch (o.channel) {
     case 'table':
       return o.dining_tables?.label ?? 'Mesa'
@@ -85,4 +92,15 @@ export function elapsedLabel(iso: string, now: number = Date.now()): string {
 
 export function elapsedMinutes(iso: string, now: number = Date.now()): number {
   return Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000))
+}
+
+/** "01/10 14:35" no fuso do restaurante */
+export function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Manaus',
+  }).format(new Date(iso))
 }

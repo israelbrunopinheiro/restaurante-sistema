@@ -1,9 +1,9 @@
 # Cordeiro's Refeições — sistema de gestão
 
-Sistema web (funciona no celular, tablet e computador) para pedidos, cozinha e, nas próximas fases, caixa e financeiro.
+Sistema web (funciona no celular, tablet e computador) para pedidos, cozinha e caixa; o financeiro vem na próxima fase.
 Projeto independente, com banco e repositório próprios.
 
-## Fase 1 (esta entrega): pedidos sem erro
+## Fase 1: pedidos sem erro
 
 | Tela | Quem usa | O que faz |
 |---|---|---|
@@ -15,6 +15,24 @@ Projeto independente, com banco e repositório próprios.
 
 Como o app evita pedido errado: o pedido é digitado **uma vez** e aparece na tela da cozinha; **preços e totais são
 calculados no banco** (o app só envia produto, quantidade e observação); cada pedido guarda o nome e o preço da época.
+
+## Fase 2: caixa
+
+| Tela | Quem usa | O que faz |
+|---|---|---|
+| **Caixa** | dono, atendente | Abrir e fechar o caixa, receber pagamentos, sangria e suprimento, estorno (dono), histórico (dono) |
+
+- **Turno de caixa:** um por vez. Abre com o troco inicial; fecha com a contagem do dinheiro da gaveta.
+- **Receber:** o pedido de **mesa** é cobrado pela **conta da mesa** (soma de todos os pedidos dela); retirada, delivery
+  e WhatsApp são cobrados um a um. Pagamento em **dinheiro, Pix, débito ou crédito**, inteiro ou **dividido**
+  (ex.: R$ 50 no Pix + o resto em dinheiro). Com dinheiro, a tela calcula o **troco**.
+- **Sangria / suprimento:** exigem motivo; a sangria não passa do dinheiro que há na gaveta.
+- **Fechamento:** o sistema mostra o dinheiro esperado (troco + vendas em dinheiro + suprimentos − sangrias) e você
+  digita o contado. **Se houver diferença, o motivo é obrigatório.** Pix, débito e crédito não entram na gaveta:
+  confira com o extrato do banco e da maquininha.
+- **Estorno (só o dono):** lança valores negativos, sem apagar o histórico, e devolve o pedido para "A receber".
+  Pedido pago **não pode ser cancelado** sem estornar antes.
+- Atendente só enxerga o turno aberto; o histórico de caixas fechados é do dono.
 
 ## Primeiro acesso
 
@@ -46,6 +64,10 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 - **Dinheiro em centavos** (inteiro). Fuso do restaurante: `America/Manaus`; a numeração dos pedidos reinicia a cada dia.
 - **RLS em todas as tabelas.** Sem login não se lê nada. O cardápio só o dono altera. Pedidos **não** são gravados
   direto: passam por `create_order` e `set_order_status`, que validam perfil, itens, preços e transições de status.
+- **Caixa:** `open_cash_session`, `add_cash_movement`, `pay_orders`, `refund_order`, `close_cash_session` e
+  `cash_session_summary`. As tabelas `cash_sessions`, `payments` e `cash_movements` não aceitam escrita direta; um índice
+  único garante **um só caixa aberto**. Cada linha de pagamento fica ligada a **um** pedido (pagamento dividido ou conta
+  de mesa são distribuídos entre eles), então o estorno é exato por pedido.
 - Status: `new → preparing → ready → delivered`, com volta de um passo e `cancelled` (a cozinha não cancela).
 - `private.create_order_internal` é a mesma criação de pedido **sem checagem de usuário**, reservada para o atendente
   de WhatsApp (Fase 1.5), que vai rodar no servidor.
@@ -56,6 +78,6 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 
 - **1.5** Atendente de WhatsApp com IA (API oficial do WhatsApp Business): lê a mensagem, confirma o pedido com o
   cliente e lança direto na cozinha.
-- **2** Caixa: abertura/fechamento, sangria, formas de pagamento, fechamento de conta da mesa (soma dos pedidos).
 - **3** Financeiro: contas a pagar/receber, fluxo de caixa, resultado do mês, painel.
-- Depois: editar pedido já enviado, impressão de comanda, fichas técnicas/estoque, reservas.
+- Depois: taxa de serviço (10%) e desconto na conta, editar pedido já enviado, impressão de comanda, fichas
+  técnicas/estoque, reservas.
