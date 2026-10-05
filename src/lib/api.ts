@@ -5,6 +5,7 @@ import type { CashSummary, PaymentRow } from './cash'
 import { toRpcPayments } from './cash'
 import type { EntryKind, FinanceSummary, SalesReport } from './finance'
 import type { OrderChannel, OrderStatus } from './orders'
+import type { PublicMenu, PublicOrderStatus } from './publicOrder'
 
 export type NewOrderInput = {
   channel: OrderChannel
@@ -151,4 +152,42 @@ export async function reopenFinanceEntry(entryId: string) {
   const { data, error } = await supabase.rpc('reopen_finance_entry', { p_entry_id: entryId })
   if (error) throw error
   return data
+}
+
+// ───────── Cardápio online (público, sem login) ─────────
+
+export async function getPublicMenu(tableToken?: string | null): Promise<PublicMenu> {
+  const { data, error } = await supabase.rpc('public_menu', { p_table_token: tableToken || undefined })
+  if (error) throw error
+  return data as unknown as PublicMenu
+}
+
+export type PublicOrderInput = {
+  channel: 'table' | 'pickup' | 'delivery'
+  lines: CartLine[]
+  name: string
+  phone: string
+  address?: string
+  notes?: string
+  tableToken?: string | null
+}
+
+export async function placePublicOrder(i: PublicOrderInput) {
+  const { data, error } = await supabase.rpc('place_public_order', {
+    p_channel: i.channel,
+    p_items: toRpcItems(i.lines),
+    p_customer_name: i.name,
+    p_customer_phone: i.phone,
+    p_delivery_address: i.address?.trim() || undefined,
+    p_notes: i.notes?.trim() || undefined,
+    p_table_token: i.tableToken || undefined,
+  })
+  if (error) throw error
+  return data as unknown as { id: string; order_number: number; total_cents: number }
+}
+
+export async function getPublicOrderStatus(id: string): Promise<PublicOrderStatus | null> {
+  const { data, error } = await supabase.rpc('public_order_status', { p_order_id: id })
+  if (error) throw error
+  return (data as unknown as PublicOrderStatus | null) ?? null
 }

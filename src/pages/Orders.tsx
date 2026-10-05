@@ -5,6 +5,7 @@ import { useNow } from '../hooks/useNow'
 import { useOrders } from '../hooks/useOrders'
 import { setOrderStatus } from '../lib/api'
 import { formatBRL } from '../lib/money'
+import { formatPhone } from '../lib/publicOrder'
 import {
   OPEN_STATUSES,
   channelIcon,
@@ -129,6 +130,7 @@ export default function Orders() {
                       <span className="text-2xl font-extrabold">#{o.order_number}</span>
                       <span aria-hidden>{channelIcon[o.channel]}</span>
                       <span className="truncate font-semibold">{orderTitle(o)}</span>
+                      {o.source === 'online' && <Badge className="bg-violet-100 text-violet-800">🌐 Online</Badge>}
                     </div>
                     <div className="text-xs text-stone-500">
                       {channelLabel[o.channel]} · {formatTime(o.created_at)}
@@ -155,7 +157,7 @@ export default function Orders() {
                       <div>
                         📞{' '}
                         <a className="font-medium text-brand-700 underline" href={`tel:${o.customer_phone}`}>
-                          {o.customer_phone}
+                          {formatPhone(o.customer_phone)}
                         </a>
                       </div>
                     )}

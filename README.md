@@ -52,6 +52,24 @@ calculados no banco** (o app só envia produto, quantidade e observação); cada
 - Valores do custo dos ingredientes só aparecem quando a compra é lançada como despesa (ainda não há estoque/fichas
   técnicas).
 
+## Cardápio online (cliente pede sozinho)
+
+Página pública, **sem login**: `/pedir` (retirada e delivery) e `/pedir?mesa=<código>` (QR de cada mesa). O cliente
+escolhe os itens, informa nome e telefone (e endereço, no delivery), envia e **acompanha o andamento** em
+`/pedir/pedido/<id>`. O pedido cai na cozinha e no caixa como qualquer outro, com a etiqueta **🌐 Online**.
+
+- **Desligado por padrão.** O dono liga em **Configurações → Pedidos online** ("Aceitando pedidos online") e escolhe
+  quais modalidades aceitar (retirada, delivery, pedido pela mesa) e o pedido mínimo.
+- **QR codes** (`/qr`, só o dono): um geral e um por mesa, prontos para imprimir. Cada mesa tem um código secreto; "Trocar
+  código" invalida o QR antigo.
+- **Pagamento** na mesa, na retirada ou na entrega (pelo Caixa). Pagamento online ainda não existe.
+- **Segurança.** Quem não tem login só acessa 3 funções do banco: `public_menu`, `place_public_order` e
+  `public_order_status`; as tabelas continuam fechadas. O cliente envia apenas produto, quantidade e observação (o preço
+  vem do banco), com limites de tamanho e de valor (teto de R$ 3.000 por pedido). **Limites contra abuso:** 4 pedidos por
+  telefone por hora, 8 por aparelho (IP) a cada 10 minutos, 6 por mesa a cada 10 minutos e 60 no total a cada 10
+  minutos. O acompanhamento só mostra itens e andamento (nunca telefone ou endereço) e só funciona para pedidos online.
+- Se alguém abusar, cancele o pedido em **Pedidos** e desligue o recurso em Configurações.
+
 ## Primeiro acesso
 
 1. Abra o sistema e clique em **Primeiro acesso? Criar conta**. **A primeira conta criada vira a do dono.**
@@ -100,6 +118,8 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 - **Dinheiro em centavos** (inteiro). Fuso do restaurante: `America/Manaus`; a numeração dos pedidos reinicia a cada dia.
 - **RLS em todas as tabelas.** Sem login não se lê nada. O cardápio só o dono altera. Pedidos **não** são gravados
   direto: passam por `create_order` e `set_order_status`, que validam perfil, itens, preços e transições de status.
+- **Cardápio online:** `settings.online_*`, `dining_tables.qr_token`, `orders.source`/`client_hash`; funções públicas
+  (únicas liberadas para `anon`) em `20261006000008_online_funcoes.sql`.
 - **Financeiro:** `finance_categories` e `finance_entries` (só o dono lê). Lançamentos são criados por
   `create_finance_entry` (com repetição mensal) e baixados por `pay_finance_entry` / `reopen_finance_entry`; edição e
   exclusão diretas só valem para lançamentos **não baixados**. `finance_summary` e `sales_report` geram os relatórios.
@@ -115,8 +135,7 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 
 ## Próximas fases
 
-- **Cardápio online** para o cliente pedir sozinho (QR code na mesa ou link): exige acesso sem login, com regras de
-  segurança próprias (validação no servidor, limite de pedidos por origem).
+- Pagamento online (Pix) no cardápio online, horário de funcionamento automático e bloqueio de telefones.
 - **1.5** Atendente de WhatsApp com IA (API oficial do WhatsApp Business): lê a mensagem, confirma o pedido com o
   cliente e lança direto na cozinha.
 - Depois: taxa de serviço (10%) e desconto na conta, editar pedido já enviado, impressão de comanda, fichas

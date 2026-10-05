@@ -33,3 +33,9 @@ button:not(:disabled),
   --viz-series-2: #eb6834;
   --viz-grid: #e7e5e4;
 }
+
+@media print {
+  body {
+    background: #fff;
+  }
+}

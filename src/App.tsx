@@ -1,19 +1,24 @@
-import type { ReactNode } from 'react'
+import { Suspense, lazy, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthProvider'
 import Layout from './components/Layout'
 import { Spinner } from './components/ui'
 import type { AppRole } from './lib/orders'
 import Login from './pages/Login'
+import PublicOrder from './pages/public/PublicOrder'
+import PublicTrack from './pages/public/PublicTrack'
 import PendingApproval from './pages/PendingApproval'
-import NewOrder from './pages/NewOrder'
-import Orders from './pages/Orders'
-import Cash from './pages/Cash'
-import Dashboard from './pages/Dashboard'
-import Finance from './pages/Finance'
-import Kitchen from './pages/Kitchen'
-import Menu from './pages/Menu'
-import Settings from './pages/Settings'
+
+// Telas da equipe carregam só quando abertas: a página do cliente fica leve em internet móvel.
+const NewOrder = lazy(() => import('./pages/NewOrder'))
+const Orders = lazy(() => import('./pages/Orders'))
+const Cash = lazy(() => import('./pages/Cash'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Finance = lazy(() => import('./pages/Finance'))
+const Kitchen = lazy(() => import('./pages/Kitchen'))
+const Menu = lazy(() => import('./pages/Menu'))
+const Settings = lazy(() => import('./pages/Settings'))
+const QrCodes = lazy(() => import('./pages/QrCodes'))
 
 function RequireStaff() {
   const { session, profile, loading } = useAuth()
@@ -38,8 +43,11 @@ export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || undefined}>
       <AuthProvider>
+        <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/pedir" element={<PublicOrder />} />
+          <Route path="/pedir/pedido/:id" element={<PublicTrack />} />
           <Route element={<RequireStaff />}>
             <Route element={<Layout />}>
               <Route index element={<Home />} />
@@ -72,6 +80,14 @@ export default function App() {
                 element={
                   <Guard roles={['owner', 'kitchen']}>
                     <Kitchen />
+                  </Guard>
+                }
+              />
+              <Route
+                path="qr"
+                element={
+                  <Guard roles={['owner']}>
+                    <QrCodes />
                   </Guard>
                 }
               />
@@ -111,6 +127,7 @@ export default function App() {
             </Route>
           </Route>
         </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   )

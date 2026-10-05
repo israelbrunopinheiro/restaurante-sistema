@@ -34,6 +34,8 @@ function order(over: Partial<OrderWithItems> & { id: string }): OrderWithItems {
     updated_at: '2026-10-01T12:00:00Z',
     status_changed_at: '2026-10-01T12:00:00Z',
     paid_at: null,
+    source: 'staff',
+    client_hash: null,
     order_items: [],
     dining_tables: { label: 'Mesa 1' },
     ...over,

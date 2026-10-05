@@ -136,7 +136,7 @@ export default function Kitchen() {
                           </div>
                           <div className="truncate text-lg font-bold">{orderTitle(o)}</div>
                           <div className="text-xs text-stone-500">
-                            {channelLabel[o.channel]} · entrou às {formatTime(o.created_at)}
+                            {channelLabel[o.channel]}{o.source === 'online' ? ' · 🌐 online' : ''} · entrou às {formatTime(o.created_at)}
                           </div>
                         </div>
                         <div

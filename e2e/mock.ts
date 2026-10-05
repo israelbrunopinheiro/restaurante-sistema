@@ -13,15 +13,15 @@ export const products = [
   { id: 'p2', category_id: 'c1', name: 'Suco de cupuaçu', description: null, price_cents: 800, active: true, position: 1, created_at: T0, updated_at: T0 },
 ]
 export const tables = [
-  { id: 't1', label: 'Mesa 1', seats: 4, active: true, created_at: T0 },
-  { id: 't2', label: 'Mesa 2', seats: 4, active: true, created_at: T0 },
-  { id: 't10', label: 'Mesa 10', seats: 4, active: true, created_at: T0 },
+  { id: 't1', label: 'Mesa 1', seats: 4, active: true, created_at: T0, qr_token: 'tokmesa1aaaaaaaaaaaaaaaa' },
+  { id: 't2', label: 'Mesa 2', seats: 4, active: true, created_at: T0, qr_token: 'tokmesa2bbbbbbbbbbbbbbbb' },
+  { id: 't10', label: 'Mesa 10', seats: 4, active: true, created_at: T0, qr_token: 'tokmesa10cccccccccccccc' },
 ]
 
 export const seedOrder = {
   id: 'o-seed', business_date: '2026-10-01', order_number: 7, channel: 'table', status: 'new',
   dining_table_id: 't2', customer_name: null, customer_phone: null, delivery_address: null, notes: 'Cliente com pressa',
-  subtotal_cents: 3500, delivery_fee_cents: 0, total_cents: 3500, cancel_reason: null, created_by: USER_ID, paid_at: null,
+  subtotal_cents: 3500, delivery_fee_cents: 0, total_cents: 3500, cancel_reason: null, created_by: USER_ID, paid_at: null, source: 'staff', client_hash: null,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status_changed_at: new Date().toISOString(),
   order_items: [{ id: 'i1', order_id: 'o-seed', product_id: 'p1', product_name: 'Feijoada', unit_price_cents: 3500, quantity: 2, notes: 'sem cebola', created_at: new Date().toISOString() }],
   dining_tables: { label: 'Mesa 2' },
@@ -54,7 +54,7 @@ type CashOptions = { open?: boolean; opening_cents?: number }
 
 export async function setup(
   page: Page,
-  opts: { role: Role; active?: boolean; orders?: unknown[]; cash?: CashOptions; entries?: unknown[] },
+  opts: { role: Role; active?: boolean; orders?: unknown[]; cash?: CashOptions; entries?: unknown[]; online?: { open?: boolean; pickup?: boolean; delivery?: boolean; table?: boolean; min_cents?: number } },
 ) {
   const calls: Calls = { rpc: [] }
   const orders = (opts.orders ? structuredClone(opts.orders) : []) as Json[] // cópia: cada teste começa do zero
@@ -74,6 +74,12 @@ export async function setup(
   ]
   const entries: Json[] = opts.entries ? (structuredClone(opts.entries) as Json[]) : []
   const catName = (id: unknown) => (fcats.find((c) => c.id === id)?.name as string) ?? ''
+  const settingsState: Json = {
+    id: true, restaurant_name: "Cordeiro's Refeições", delivery_fee_cents: 500, updated_at: T0,
+    online_open: opts.online?.open ?? false, online_pickup: opts.online?.pickup ?? true, online_delivery: opts.online?.delivery ?? true,
+    online_table: opts.online?.table ?? true, online_min_cents: opts.online?.min_cents ?? 0,
+  }
+  const tablesState: Json[] = structuredClone(tables) as Json[]
   const closedSessions: Json[] = []
   const payments: Json[] = []
   const movements: Json[] = []
@@ -139,7 +145,7 @@ export async function setup(
           channel: body.p_channel, status: 'new', dining_table_id: body.p_dining_table_id ?? null,
           customer_name: body.p_customer_name ?? null, customer_phone: body.p_customer_phone ?? null,
           delivery_address: body.p_delivery_address ?? null, notes: body.p_notes ?? null,
-          subtotal_cents: 0, delivery_fee_cents: 0, total_cents: 0, cancel_reason: null, created_by: USER_ID, paid_at: null,
+          subtotal_cents: 0, delivery_fee_cents: 0, total_cents: 0, cancel_reason: null, created_by: USER_ID, paid_at: null, source: 'staff', client_hash: null,
           created_at: new Date().toISOString(), updated_at: new Date().toISOString(), status_changed_at: new Date().toISOString(),
           order_items: items.map((it, i) => {
             const p = products.find((x) => x.id === it.product_id)!
@@ -213,6 +219,50 @@ export async function setup(
         closedSessions.push(closed)
         session = null
         return json(route, closed)
+      }
+
+
+      // ───── cardápio online (público) ─────
+      if (fn === 'public_menu') {
+        if (!settingsState.online_open) return json(route, { open: false, restaurant_name: settingsState.restaurant_name })
+        const tok = body.p_table_token as string | undefined
+        const tb = tok ? tablesState.find((t) => t.qr_token === tok && t.active) : undefined
+        return json(route, {
+          open: true, restaurant_name: settingsState.restaurant_name, pickup: settingsState.online_pickup, delivery: settingsState.online_delivery,
+          delivery_fee_cents: settingsState.delivery_fee_cents, min_cents: settingsState.online_min_cents, table_requested: !!tok,
+          table: tb && settingsState.online_table ? { label: tb.label } : null,
+          categories: [{ id: category.id, name: category.name, products: products.map((p) => ({ id: p.id, name: p.name, description: p.description, price_cents: p.price_cents })) }],
+        })
+      }
+      if (fn === 'place_public_order') {
+        if (!settingsState.online_open) return fail(route, 'O restaurante não está recebendo pedidos online agora.')
+        const ch = body.p_channel as string
+        const tb = ch === 'table' ? tablesState.find((t) => t.qr_token === body.p_table_token) : undefined
+        if (ch === 'table' && !tb) return fail(route, 'QR code da mesa inválido. Chame o atendente.')
+        const items = body.p_items as { product_id: string; quantity: number; notes: string | null }[]
+        const sub = items.reduce((a, it) => a + products.find((p) => p.id === it.product_id)!.price_cents * it.quantity, 0)
+        if (ch !== 'table' && sub < (settingsState.online_min_cents as number)) return fail(route, 'O pedido mínimo é mínimo.')
+        const fee = ch === 'delivery' ? (settingsState.delivery_fee_cents as number) : 0
+        const id = `o${orders.length + 1}`
+        const now = new Date().toISOString()
+        orders.push({
+          id, business_date: manausDate(), order_number: orders.length + 1, channel: ch, status: 'new', dining_table_id: tb?.id ?? null,
+          customer_name: body.p_customer_name, customer_phone: String(body.p_customer_phone).replace(/\D/g, ''), delivery_address: body.p_delivery_address ?? null,
+          notes: body.p_notes ?? null, subtotal_cents: sub, delivery_fee_cents: fee, total_cents: sub + fee, cancel_reason: null, created_by: null, paid_at: null,
+          source: 'online', client_hash: 'h', created_at: now, updated_at: now, status_changed_at: now,
+          order_items: items.map((it, i) => { const p = products.find((x) => x.id === it.product_id)!; return { id: `${id}-${i}`, order_id: id, product_id: p.id, product_name: p.name, unit_price_cents: p.price_cents, quantity: it.quantity, notes: it.notes, created_at: now } }),
+          dining_tables: tb ? { label: tb.label } : null,
+        })
+        return json(route, { id, order_number: orders.length, total_cents: sub + fee })
+      }
+      if (fn === 'public_order_status') {
+        const o = orders.find((x) => x.id === body.p_order_id && x.source === 'online') as Json | undefined
+        if (!o) return json(route, null)
+        return json(route, {
+          order_number: o.order_number, status: o.status, channel: o.channel, total_cents: o.total_cents, delivery_fee_cents: o.delivery_fee_cents,
+          created_at: o.created_at, paid: o.paid_at !== null, table_label: (o.dining_tables as Json | null)?.label ?? null,
+          items: (o.order_items as Json[]).map((it) => ({ name: it.product_name, quantity: it.quantity, notes: it.notes })),
+        })
       }
 
       // ───── financeiro ─────
@@ -325,13 +375,16 @@ export async function setup(
       case 'profiles':
         return json(route, [{ id: USER_ID, full_name: 'Ana Teste', role: opts.role, active: opts.active ?? true, created_at: T0 }])
       case 'settings':
-        return json(route, [{ id: true, restaurant_name: "Cordeiro's Refeições", delivery_fee_cents: 500, updated_at: T0 }])
+        if (req.method() === 'PATCH') { Object.assign(settingsState, req.postDataJSON()); return route.fulfill({ status: 204, headers: cors }) }
+        return json(route, [settingsState])
       case 'categories':
         return json(route, [category])
       case 'products':
         return json(route, products)
-      case 'dining_tables':
-        return json(route, tables)
+      case 'dining_tables': {
+        if (req.method() === 'PATCH') { const id = (url.searchParams.get('id') ?? '').slice(3); Object.assign(tablesState.find((t) => t.id === id) ?? {}, req.postDataJSON()); return route.fulfill({ status: 204, headers: cors }) }
+        return json(route, tablesState)
+      }
       case 'finance_categories': {
         if (req.method() === 'POST') { const b = req.postDataJSON() as Json; fcats.push({ id: `fc${fcats.length + 1}`, active: true, created_at: T0, ...b }); return json(route, [], 201) }
         if (req.method() === 'PATCH') { const id = (url.searchParams.get('id') ?? '').slice(3); Object.assign(fcats.find((c) => c.id === id) ?? {}, req.postDataJSON()); return route.fulfill({ status: 204, headers: cors }) }
@@ -371,5 +424,5 @@ export async function setup(
     }
   })
 
-  return { calls, orders, payments, movements, entries, pageErrors }
+  return { calls, orders, payments, movements, entries, settingsState, tablesState, pageErrors }
 }

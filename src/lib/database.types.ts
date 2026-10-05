@@ -18,6 +18,8 @@ type OrderRow = {
   notes: string | null
   order_number: number
   paid_at: string | null
+  source: 'staff' | 'online'
+  client_hash: string | null
   status: Database['public']['Enums']['order_status']
   status_changed_at: string
   subtotal_cents: number
@@ -109,9 +111,9 @@ export type Database = {
         Relationships: []
       }
       dining_tables: {
-        Row: { active: boolean; created_at: string; id: string; label: string; seats: number | null }
-        Insert: { active?: boolean; created_at?: string; id?: string; label: string; seats?: number | null }
-        Update: { active?: boolean; created_at?: string; id?: string; label?: string; seats?: number | null }
+        Row: { active: boolean; created_at: string; id: string; label: string; qr_token: string; seats: number | null }
+        Insert: { active?: boolean; created_at?: string; id?: string; label: string; qr_token?: string; seats?: number | null }
+        Update: { active?: boolean; created_at?: string; id?: string; label?: string; qr_token?: string; seats?: number | null }
         Relationships: []
       }
       finance_categories: {
@@ -302,14 +304,46 @@ export type Database = {
         Relationships: []
       }
       settings: {
-        Row: { delivery_fee_cents: number; id: boolean; restaurant_name: string; updated_at: string }
-        Insert: { delivery_fee_cents?: number; id?: boolean; restaurant_name?: string; updated_at?: string }
-        Update: { delivery_fee_cents?: number; id?: boolean; restaurant_name?: string; updated_at?: string }
+        Row: {
+          delivery_fee_cents: number
+          id: boolean
+          online_delivery: boolean
+          online_min_cents: number
+          online_open: boolean
+          online_pickup: boolean
+          online_table: boolean
+          restaurant_name: string
+          updated_at: string
+        }
+        Insert: never
+        Update: {
+          delivery_fee_cents?: number
+          online_delivery?: boolean
+          online_min_cents?: number
+          online_open?: boolean
+          online_pickup?: boolean
+          online_table?: boolean
+          restaurant_name?: string
+        }
         Relationships: []
       }
     }
     Views: { [_ in never]: never }
     Functions: {
+      place_public_order: {
+        Args: {
+          p_channel: string
+          p_customer_name: string
+          p_customer_phone: string
+          p_delivery_address?: string
+          p_items: Json
+          p_notes?: string
+          p_table_token?: string
+        }
+        Returns: Json
+      }
+      public_menu: { Args: { p_table_token?: string }; Returns: Json }
+      public_order_status: { Args: { p_order_id: string }; Returns: Json }
       create_finance_entry: {
         Args: {
           p_amount_cents: number

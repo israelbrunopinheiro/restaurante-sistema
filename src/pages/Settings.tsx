@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { Badge, Button, Card, EmptyState, ErrorBox, Field, Notice, SectionTitle, Spinner, errorMessage, inputClass } from '../components/ui'
 import type { Tables } from '../lib/database.types'
 import { centsToInput, parseBRLToCents } from '../lib/money'
 import { roleLabel, type AppRole } from '../lib/orders'
+import { onlineMenuUrl } from '../lib/publicOrder'
 import { supabase } from '../lib/supabase'
 
 type DiningTable = Tables<'dining_tables'>
@@ -52,6 +54,137 @@ function RestaurantSection() {
             {busy ? 'Salvando…' : 'Salvar'}
           </Button>
         </form>
+      </Card>
+    </section>
+  )
+}
+
+function OnlineSection() {
+  const { settings, reloadSettings } = useAuth()
+  const [minText, setMinText] = useState(centsToInput(settings?.online_min_cents ?? 0))
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  if (!settings) return null
+
+  const link = onlineMenuUrl(window.location.origin, import.meta.env.BASE_URL)
+
+  async function save(patch: Partial<Pick<Tables<'settings'>, 'online_open' | 'online_pickup' | 'online_delivery' | 'online_table' | 'online_min_cents'>>) {
+    setError(null)
+    setNotice(null)
+    const { error } = await supabase.from('settings').update(patch).eq('id', true)
+    if (error) return setError(errorMessage(error))
+    await reloadSettings()
+    setNotice('Salvo!')
+  }
+
+  async function toggleOpen(next: boolean) {
+    if (next && !window.confirm('Ligar os pedidos online?\n\nQualquer pessoa com o link ou o QR code poderá fazer pedidos. Confira o cardápio e a taxa de entrega antes.')) return
+    await save({ online_open: next })
+  }
+
+  async function saveMin() {
+    const cents = parseBRLToCents(minText === '' ? '0' : minText)
+    if (cents === null) return setError('Valor inválido. Use o formato 30,00 (ou 0 para sem mínimo).')
+    await save({ online_min_cents: cents })
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      window.prompt('Copie o link:', link)
+    }
+  }
+
+  const Check = ({ label, hint, checked, onChange }: { label: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) => (
+    <label className="flex items-start gap-3 rounded-xl border border-stone-200 p-3">
+      <input type="checkbox" className="mt-1 h-5 w-5 shrink-0" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        <span className="block font-medium">{label}</span>
+        <span className="block text-sm text-stone-500">{hint}</span>
+      </span>
+    </label>
+  )
+
+  return (
+    <section>
+      <SectionTitle>Pedidos online</SectionTitle>
+      <Card className="space-y-4">
+        {error && <ErrorBox>{error}</ErrorBox>}
+        {notice && <Notice>{notice}</Notice>}
+
+        <label
+          className={`flex items-start gap-3 rounded-xl border-2 p-3 ${settings.online_open ? 'border-emerald-500 bg-emerald-50' : 'border-stone-300'}`}
+        >
+          <input
+            type="checkbox"
+            className="mt-1 h-6 w-6 shrink-0"
+            checked={settings.online_open}
+            onChange={(e) => void toggleOpen(e.target.checked)}
+            aria-label="Aceitando pedidos online"
+          />
+          <span>
+            <span className="block text-lg font-bold">
+              {settings.online_open ? '🟢 Aceitando pedidos online' : '🔴 Pedidos online desligados'}
+            </span>
+            <span className="block text-sm text-stone-600">
+              {settings.online_open
+                ? 'Desligue quando a cozinha estiver cheia ou fora do horário. Quem abrir o link verá "pedidos fechados".'
+                : 'Ligue para começar a receber pedidos pelo link e pelos QR codes das mesas. Enquanto estiver desligado, quem abrir o link vê "pedidos fechados".'}
+            </span>
+          </span>
+        </label>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Check label="Retirada" hint="Cliente busca no local" checked={settings.online_pickup} onChange={(v) => void save({ online_pickup: v })} />
+          <Check label="Delivery" hint="Usa a taxa de entrega acima" checked={settings.online_delivery} onChange={(v) => void save({ online_delivery: v })} />
+          <Check label="Pedido pela mesa" hint="Pelo QR code de cada mesa" checked={settings.online_table} onChange={(v) => void save({ online_table: v })} />
+        </div>
+
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Field label="Pedido mínimo para retirada e delivery (R$)" hint="0 = sem mínimo. Não vale para pedidos feitos pela mesa.">
+              <input className={inputClass} inputMode="decimal" value={minText} onChange={(e) => setMinText(e.target.value)} />
+            </Field>
+          </div>
+          <Button variant="secondary" onClick={() => void saveMin()}>
+            Salvar
+          </Button>
+        </div>
+
+        <div className="space-y-2 rounded-xl bg-stone-100 p-3">
+          <div className="text-sm font-medium text-stone-700">Link do cardápio online</div>
+          <div className="break-all rounded-lg bg-white p-2 text-sm" data-testid="online-link">
+            {link}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={() => void copy()}>
+              {copied ? '✓ Copiado' : 'Copiar link'}
+            </Button>
+            <a
+              href={link}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-9 items-center rounded-xl border border-stone-300 bg-white px-3 text-sm font-semibold text-stone-800 hover:bg-stone-100"
+            >
+              Abrir
+            </a>
+            <Link
+              to="/qr"
+              className="inline-flex min-h-9 items-center rounded-xl bg-brand-600 px-3 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              QR codes das mesas →
+            </Link>
+          </div>
+        </div>
+        <p className="text-xs text-stone-500">
+          Os pedidos online chegam na cozinha com a etiqueta <strong>🌐 Online</strong>. O cliente paga na mesa, na retirada ou
+          na entrega, e acompanha o andamento por uma página própria. Há limites automáticos por telefone, aparelho e mesa
+          contra pedidos falsos; se alguém abusar, cancele o pedido em Pedidos.
+        </p>
       </Card>
     </section>
   )
@@ -259,6 +392,7 @@ export default function Settings() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Configurações</h1>
       <RestaurantSection />
+      <OnlineSection />
       <TablesSection />
       <TeamSection />
     </div>
