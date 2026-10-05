@@ -1,0 +1,48 @@
+# Publica o app no GitHub Pages a cada atualização da branch main (depois de passar nos testes).
+# Endereço: https://<usuario>.github.io/<repositorio>/
+# Uso único: no GitHub, Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Build
+        run: npm run build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          # Valores públicos por design (a proteção dos dados está nas regras do banco); não são segredos.
+          VITE_SUPABASE_URL: https://arrbtzafwluqyghvzudx.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_nkHQ4CFbIYm8We54A7Xw3w_Po4KR0f6
+      # O Pages não conhece as rotas do app: qualquer endereço desconhecido cai no index.html
+      - run: cp dist/index.html dist/404.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deploy
+        uses: actions/deploy-pages@v4

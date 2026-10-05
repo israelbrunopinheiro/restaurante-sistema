@@ -57,6 +57,24 @@ npm test            # testes de unidade (dinheiro, carrinho, datas)
 npm run test:e2e    # testes de navegador (rede simulada; precisa do Chromium do Playwright)
 ```
 
+## Publicação (GitHub Pages)
+
+A cada atualização da `main`, o workflow `.github/workflows/publicar.yml` roda os testes, gera o build e publica em
+`https://israelbrunopinheiro.github.io/restaurante-sistema/`.
+
+Uso único, no GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+Para hospedar em outro lugar (domínio próprio, cPanel, Vercel, Netlify), gere o build e envie a pasta `dist/`:
+
+```bash
+VITE_SUPABASE_URL=... VITE_SUPABASE_PUBLISHABLE_KEY=... npm run build        # na raiz do domínio
+VITE_BASE=/subpasta/ VITE_SUPABASE_URL=... VITE_SUPABASE_PUBLISHABLE_KEY=... npm run build   # em subpasta
+```
+
+O servidor precisa mandar qualquer endereço desconhecido para o `index.html` (senão atualizar a página em `/caixa`
+dá erro 404) e usar HTTPS. No Supabase, em *Authentication → URL Configuration*, coloque o endereço do site em
+**Site URL** e em **Redirect URLs**.
+
 ## Banco de dados (Supabase)
 
 Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
