@@ -39,3 +39,11 @@ export function parseBRLToCents(input: string): number | null {
 export function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',')
 }
+
+/** Versão curta para eixos de gráfico: 8000 → "R$ 80", 123450 → "R$ 1,2 mil", 1250000 → "R$ 12,5 mil". */
+export function formatBRLShort(cents: number): string {
+  const reais = Math.round(cents) / 100
+  if (Math.abs(reais) < 1000) return `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(reais)}`
+  const mil = reais / 1000
+  return `R$ ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: mil < 100 ? 1 : 0 }).format(mil)} mil`
+}

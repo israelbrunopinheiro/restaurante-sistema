@@ -8,6 +8,8 @@ const tabs: { to: string; label: string; roles: AppRole[] }[] = [
   { to: '/pedidos', label: 'Pedidos', roles: ['owner', 'attendant'] },
   { to: '/caixa', label: 'Caixa', roles: ['owner', 'attendant'] },
   { to: '/cozinha', label: 'Cozinha', roles: ['owner', 'kitchen'] },
+  { to: '/painel', label: 'Painel', roles: ['owner'] },
+  { to: '/financeiro', label: 'Financeiro', roles: ['owner'] },
   { to: '/cardapio', label: 'Cardápio', roles: ['owner'] },
   { to: '/configuracoes', label: 'Configurações', roles: ['owner'] },
 ]

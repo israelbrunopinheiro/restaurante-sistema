@@ -9,6 +9,8 @@ import PendingApproval from './pages/PendingApproval'
 import NewOrder from './pages/NewOrder'
 import Orders from './pages/Orders'
 import Cash from './pages/Cash'
+import Dashboard from './pages/Dashboard'
+import Finance from './pages/Finance'
 import Kitchen from './pages/Kitchen'
 import Menu from './pages/Menu'
 import Settings from './pages/Settings'
@@ -70,6 +72,22 @@ export default function App() {
                 element={
                   <Guard roles={['owner', 'kitchen']}>
                     <Kitchen />
+                  </Guard>
+                }
+              />
+              <Route
+                path="painel"
+                element={
+                  <Guard roles={['owner']}>
+                    <Dashboard />
+                  </Guard>
+                }
+              />
+              <Route
+                path="financeiro"
+                element={
+                  <Guard roles={['owner']}>
+                    <Finance />
                   </Guard>
                 }
               />

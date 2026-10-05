@@ -1,6 +1,6 @@
 # Cordeiro's Refeições — sistema de gestão
 
-Sistema web (funciona no celular, tablet e computador) para pedidos, cozinha e caixa; o financeiro vem na próxima fase.
+Sistema web (funciona no celular, tablet e computador) para pedidos, cozinha, caixa e financeiro.
 Projeto independente, com banco e repositório próprios.
 
 ## Fase 1: pedidos sem erro
@@ -33,6 +33,24 @@ calculados no banco** (o app só envia produto, quantidade e observação); cada
 - **Estorno (só o dono):** lança valores negativos, sem apagar o histórico, e devolve o pedido para "A receber".
   Pedido pago **não pode ser cancelado** sem estornar antes.
 - Atendente só enxerga o turno aberto; o histórico de caixas fechados é do dono.
+
+## Fase 3: financeiro e painel de vendas (só o dono)
+
+| Tela | O que faz |
+|---|---|
+| **Painel** | Faturamento, pedidos, ticket médio, mais vendidos, horários de pico e canais; por dia, semana ou mês |
+| **Financeiro → Resumo** | Resultado do período (entradas − saídas), entradas e saídas por dia, saídas por categoria, contas em aberto |
+| **Financeiro → Contas a pagar / a receber** | Lançamentos com vencimento e categoria, **repetição mensal** (aluguel de 12 meses), baixa com forma, valor e data, reabrir |
+| **Financeiro → Categorias** | Categorias de despesas e de receitas (editáveis) |
+
+- **Regime de caixa:** o resultado conta o dinheiro na data em que **entrou** (vendas recebidas no caixa, já descontados
+  estornos, e outras receitas) ou **saiu** (contas pagas). Pedido ainda não pago e conta ainda não paga não entram.
+- **Integração com o caixa:** ao pagar uma conta em dinheiro, dá para marcar "saiu da gaveta": o sistema lança a
+  **sangria** sozinho (e o contrário para receitas, como suprimento). Reabrir a conta devolve o dinheiro.
+- **Painel × Financeiro:** o painel mostra o que foi **vendido** (pedidos não cancelados, pagos ou não); o financeiro
+  mostra o que foi **recebido e pago**. Os números podem diferir por causa de pedidos ainda não pagos.
+- Valores do custo dos ingredientes só aparecem quando a compra é lançada como despesa (ainda não há estoque/fichas
+  técnicas).
 
 ## Primeiro acesso
 
@@ -82,6 +100,9 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 - **Dinheiro em centavos** (inteiro). Fuso do restaurante: `America/Manaus`; a numeração dos pedidos reinicia a cada dia.
 - **RLS em todas as tabelas.** Sem login não se lê nada. O cardápio só o dono altera. Pedidos **não** são gravados
   direto: passam por `create_order` e `set_order_status`, que validam perfil, itens, preços e transições de status.
+- **Financeiro:** `finance_categories` e `finance_entries` (só o dono lê). Lançamentos são criados por
+  `create_finance_entry` (com repetição mensal) e baixados por `pay_finance_entry` / `reopen_finance_entry`; edição e
+  exclusão diretas só valem para lançamentos **não baixados**. `finance_summary` e `sales_report` geram os relatórios.
 - **Caixa:** `open_cash_session`, `add_cash_movement`, `pay_orders`, `refund_order`, `close_cash_session` e
   `cash_session_summary`. As tabelas `cash_sessions`, `payments` e `cash_movements` não aceitam escrita direta; um índice
   único garante **um só caixa aberto**. Cada linha de pagamento fica ligada a **um** pedido (pagamento dividido ou conta
@@ -94,8 +115,9 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 
 ## Próximas fases
 
+- **Cardápio online** para o cliente pedir sozinho (QR code na mesa ou link): exige acesso sem login, com regras de
+  segurança próprias (validação no servidor, limite de pedidos por origem).
 - **1.5** Atendente de WhatsApp com IA (API oficial do WhatsApp Business): lê a mensagem, confirma o pedido com o
   cliente e lança direto na cozinha.
-- **3** Financeiro: contas a pagar/receber, fluxo de caixa, resultado do mês, painel.
 - Depois: taxa de serviço (10%) e desconto na conta, editar pedido já enviado, impressão de comanda, fichas
   técnicas/estoque, reservas.

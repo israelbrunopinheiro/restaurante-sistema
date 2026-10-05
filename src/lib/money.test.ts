@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToInput, formatBRL, parseBRLToCents } from './money'
+import { centsToInput, formatBRL, formatBRLShort, parseBRLToCents } from './money'
 
 describe('parseBRLToCents', () => {
   it.each([
@@ -35,5 +35,18 @@ describe('formatBRL / centsToInput', () => {
   it('ida e volta', () => {
     expect(centsToInput(3590)).toBe('35,90')
     expect(parseBRLToCents(centsToInput(123450))).toBe(123450)
+  })
+})
+
+describe('formatBRLShort', () => {
+  it('abrevia valores grandes para o eixo dos gráficos', () => {
+    expect(formatBRLShort(0)).toBe('R$ 0')
+    expect(formatBRLShort(8000)).toBe('R$ 80')
+    expect(formatBRLShort(5050)).toBe('R$ 50,5')
+    expect(formatBRLShort(123450)).toBe('R$ 1,2 mil')
+    expect(formatBRLShort(1250000)).toBe('R$ 12,5 mil')
+    expect(formatBRLShort(1200000)).toBe('R$ 12 mil')
+    expect(formatBRLShort(5000000)).toBe('R$ 50 mil')
+    expect(formatBRLShort(12500000)).toBe('R$ 125 mil')
   })
 })

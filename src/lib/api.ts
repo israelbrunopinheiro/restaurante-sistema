@@ -3,6 +3,7 @@ import type { CartLine } from './cart'
 import { toRpcItems } from './cart'
 import type { CashSummary, PaymentRow } from './cash'
 import { toRpcPayments } from './cash'
+import type { EntryKind, FinanceSummary, SalesReport } from './finance'
 import type { OrderChannel, OrderStatus } from './orders'
 
 export type NewOrderInput = {
@@ -85,6 +86,69 @@ export async function closeCashSession(countedCents: number, notes?: string) {
     p_counted_cents: countedCents,
     p_notes: notes?.trim() || undefined,
   })
+  if (error) throw error
+  return data
+}
+
+// ───────── Financeiro (só o dono) ─────────
+
+export async function getFinanceSummary(from: string, to: string): Promise<FinanceSummary> {
+  const { data, error } = await supabase.rpc('finance_summary', { p_from: from, p_to: to })
+  if (error) throw error
+  return data as unknown as FinanceSummary
+}
+
+export async function getSalesReport(from: string, to: string): Promise<SalesReport> {
+  const { data, error } = await supabase.rpc('sales_report', { p_from: from, p_to: to })
+  if (error) throw error
+  return data as unknown as SalesReport
+}
+
+export type NewEntryInput = {
+  kind: EntryKind
+  categoryId: string
+  description: string
+  party?: string
+  amountCents: number
+  dueDate: string
+  notes?: string
+  repeatMonths?: number
+}
+
+/** Cria o lançamento (ou vários, se repetir todo mês). Devolve quantos foram criados. */
+export async function createFinanceEntry(i: NewEntryInput) {
+  const { data, error } = await supabase.rpc('create_finance_entry', {
+    p_kind: i.kind,
+    p_category_id: i.categoryId,
+    p_description: i.description,
+    p_party: i.party?.trim() || undefined,
+    p_amount_cents: i.amountCents,
+    p_due_date: i.dueDate,
+    p_notes: i.notes?.trim() || undefined,
+    p_repeat_months: i.repeatMonths ?? 1,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function payFinanceEntry(
+  entryId: string,
+  method: string,
+  opts: { amountCents?: number; paidDate?: string; fromDrawer?: boolean } = {},
+) {
+  const { data, error } = await supabase.rpc('pay_finance_entry', {
+    p_entry_id: entryId,
+    p_method: method,
+    p_amount_cents: opts.amountCents,
+    p_paid_date: opts.paidDate,
+    p_from_drawer: opts.fromDrawer ?? false,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function reopenFinanceEntry(entryId: string) {
+  const { data, error } = await supabase.rpc('reopen_finance_entry', { p_entry_id: entryId })
   if (error) throw error
   return data
 }

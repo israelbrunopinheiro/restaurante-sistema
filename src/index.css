@@ -26,3 +26,10 @@ button:not(:disabled),
 [role="button"] {
   cursor: pointer;
 }
+
+/* Gráficos (paleta validada: slots 1 e 2 da paleta de referência) */
+:root {
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-grid: #e7e5e4;
+}

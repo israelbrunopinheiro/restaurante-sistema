@@ -34,6 +34,7 @@ export type Database = {
           amount_cents: number
           created_at: string
           created_by: string | null
+          entry_id: string | null
           id: string
           kind: Database['public']['Enums']['cash_movement_kind']
           reason: string
@@ -112,6 +113,53 @@ export type Database = {
         Insert: { active?: boolean; created_at?: string; id?: string; label: string; seats?: number | null }
         Update: { active?: boolean; created_at?: string; id?: string; label?: string; seats?: number | null }
         Relationships: []
+      }
+      finance_categories: {
+        Row: { active: boolean; created_at: string; id: string; kind: Database['public']['Enums']['entry_kind']; name: string }
+        Insert: { active?: boolean; created_at?: string; id?: string; kind: Database['public']['Enums']['entry_kind']; name: string }
+        Update: { active?: boolean; created_at?: string; id?: string; kind?: Database['public']['Enums']['entry_kind']; name?: string }
+        Relationships: []
+      }
+      finance_entries: {
+        Row: {
+          amount_cents: number
+          category_id: string
+          created_at: string
+          created_by: string | null
+          description: string
+          due_date: string
+          id: string
+          installment: number | null
+          installments: number | null
+          kind: Database['public']['Enums']['entry_kind']
+          notes: string | null
+          paid_amount_cents: number | null
+          paid_at: string | null
+          paid_date: string | null
+          paid_from_drawer: boolean
+          paid_method: string | null
+          party: string | null
+          series_id: string | null
+          updated_at: string
+        }
+        Insert: never
+        Update: {
+          amount_cents?: number
+          category_id?: string
+          description?: string
+          due_date?: string
+          notes?: string | null
+          party?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'finance_entries_category_id_fkey'
+            columns: ['category_id']
+            isOneToOne: false
+            referencedRelation: 'finance_categories'
+            referencedColumns: ['id']
+          },
+        ]
       }
       order_items: {
         Row: {
@@ -262,6 +310,35 @@ export type Database = {
     }
     Views: { [_ in never]: never }
     Functions: {
+      create_finance_entry: {
+        Args: {
+          p_amount_cents: number
+          p_category_id: string
+          p_description: string
+          p_due_date: string
+          p_kind: Database['public']['Enums']['entry_kind']
+          p_notes?: string
+          p_party?: string
+          p_repeat_months?: number
+        }
+        Returns: number
+      }
+      finance_summary: { Args: { p_from: string; p_to: string }; Returns: Json }
+      pay_finance_entry: {
+        Args: {
+          p_amount_cents?: number
+          p_entry_id: string
+          p_from_drawer?: boolean
+          p_method: string
+          p_paid_date?: string
+        }
+        Returns: Database['public']['Tables']['finance_entries']['Row']
+      }
+      reopen_finance_entry: {
+        Args: { p_entry_id: string }
+        Returns: Database['public']['Tables']['finance_entries']['Row']
+      }
+      sales_report: { Args: { p_from: string; p_to: string }; Returns: Json }
       add_cash_movement: {
         Args: {
           p_amount_cents: number
@@ -314,6 +391,7 @@ export type Database = {
     Enums: {
       app_role: 'owner' | 'attendant' | 'kitchen'
       cash_movement_kind: 'supply' | 'withdrawal'
+      entry_kind: 'payable' | 'receivable'
       payment_method: 'cash' | 'pix' | 'debit' | 'credit'
       order_channel: 'table' | 'pickup' | 'delivery' | 'whatsapp'
       order_status: 'new' | 'preparing' | 'ready' | 'delivered' | 'cancelled'

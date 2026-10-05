@@ -27,11 +27,20 @@ export const seedOrder = {
   dining_tables: { label: 'Mesa 2' },
 }
 
+export const manausDate = (d: Date = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Manaus' }).format(d)
+export const addDaysIso = (iso: string, n: number) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10)
+const addMonths = (iso: string, n: number) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1 + n, d, 12))
+  if (dt.getUTCDate() !== d) dt.setUTCDate(0) // 31/01 + 1 mês → 28/02
+  return dt.toISOString().slice(0, 10)
+}
+
 /** Pedido de mesa já pronto, ainda não pago. */
 export function tableOrder(id: string, number: number, totalCents: number, minutesAgo: number, tableId = 't1') {
   const at = new Date(Date.now() - minutesAgo * 60000).toISOString()
   return {
-    ...seedOrder, id, order_number: number, status: 'ready', notes: null, dining_table_id: tableId,
+    ...seedOrder, id, order_number: number, business_date: manausDate(), status: 'ready', notes: null, dining_table_id: tableId,
     dining_tables: { label: tables.find((t) => t.id === tableId)!.label },
     subtotal_cents: totalCents, total_cents: totalCents, created_at: at, updated_at: at, status_changed_at: at,
     order_items: [{ id: `${id}-i`, order_id: id, product_id: 'p1', product_name: 'Feijoada', unit_price_cents: totalCents, quantity: 1, notes: null, created_at: at }],
@@ -45,7 +54,7 @@ type CashOptions = { open?: boolean; opening_cents?: number }
 
 export async function setup(
   page: Page,
-  opts: { role: Role; active?: boolean; orders?: unknown[]; cash?: CashOptions },
+  opts: { role: Role; active?: boolean; orders?: unknown[]; cash?: CashOptions; entries?: unknown[] },
 ) {
   const calls: Calls = { rpc: [] }
   const orders = (opts.orders ? structuredClone(opts.orders) : []) as Json[] // cópia: cada teste começa do zero
@@ -57,6 +66,14 @@ export async function setup(
     ? { id: 's1', opened_at: new Date().toISOString(), opened_by: USER_ID, opened_by_name: 'Ana Teste', opening_cents: opts.cash.opening_cents ?? 10000,
         closed_at: null, closed_by: null, closed_by_name: null, expected_cash_cents: null, counted_cents: null, difference_cents: null, totals: null, notes: null }
     : null
+  const fcats: Json[] = [
+    { id: 'fc-alu', name: 'Aluguel', kind: 'payable', active: true, created_at: T0 },
+    { id: 'fc-gas', name: 'Gás', kind: 'payable', active: true, created_at: T0 },
+    { id: 'fc-ing', name: 'Ingredientes e insumos', kind: 'payable', active: true, created_at: T0 },
+    { id: 'fc-evt', name: 'Eventos e encomendas', kind: 'receivable', active: true, created_at: T0 },
+  ]
+  const entries: Json[] = opts.entries ? (structuredClone(opts.entries) as Json[]) : []
+  const catName = (id: unknown) => (fcats.find((c) => c.id === id)?.name as string) ?? ''
   const closedSessions: Json[] = []
   const payments: Json[] = []
   const movements: Json[] = []
@@ -197,6 +214,110 @@ export async function setup(
         session = null
         return json(route, closed)
       }
+
+      // ───── financeiro ─────
+      if (fn === 'create_finance_entry') {
+        if (opts.role !== 'owner') return json(route, { code: '42501', message: 'Só o dono pode acessar o financeiro.' }, 403)
+        const n = (body.p_repeat_months as number) ?? 1
+        for (let i = 0; i < n; i++) {
+          entries.push({
+            id: `e${entries.length + 1}`, kind: body.p_kind, category_id: body.p_category_id, description: body.p_description,
+            party: body.p_party ?? null, amount_cents: body.p_amount_cents, due_date: addMonths(body.p_due_date as string, i), notes: body.p_notes ?? null,
+            series_id: n > 1 ? 'series-1' : null, installment: n > 1 ? i + 1 : null, installments: n > 1 ? n : null,
+            paid_at: null, paid_date: null, paid_amount_cents: null, paid_method: null, paid_from_drawer: false,
+            created_by: USER_ID, created_at: new Date(Date.now() + entries.length).toISOString(), updated_at: T0,
+          })
+        }
+        return json(route, n)
+      }
+      if (fn === 'pay_finance_entry') {
+        const en = entries.find((x) => x.id === body.p_entry_id) as Json
+        if (body.p_from_drawer) {
+          if (!session) return fail(route, 'Abra o caixa para usar o dinheiro da gaveta.')
+          movements.push({ id: `m${movements.length + 1}`, session_id: 's1', kind: en.kind === 'payable' ? 'withdrawal' : 'supply',
+            amount_cents: body.p_amount_cents ?? en.amount_cents, reason: `${en.kind === 'payable' ? 'Pagamento' : 'Recebimento'}: ${en.description}`,
+            created_by: USER_ID, created_at: new Date().toISOString(), entry_id: en.id })
+        }
+        Object.assign(en, { paid_at: new Date().toISOString(), paid_date: (body.p_paid_date as string) ?? manausDate(),
+          paid_amount_cents: body.p_amount_cents ?? en.amount_cents, paid_method: body.p_method, paid_from_drawer: !!body.p_from_drawer })
+        return json(route, en)
+      }
+      if (fn === 'reopen_finance_entry') {
+        const en = entries.find((x) => x.id === body.p_entry_id) as Json
+        Object.assign(en, { paid_at: null, paid_date: null, paid_amount_cents: null, paid_method: null, paid_from_drawer: false })
+        return json(route, en)
+      }
+      if (fn === 'finance_summary') {
+        if (opts.role !== 'owner') return json(route, { code: '42501', message: 'Só o dono pode acessar o financeiro.' }, 403)
+        const from = body.p_from as string, to = body.p_to as string
+        const inRange = (d: string) => d >= from && d <= to
+        const pays = payments.filter((p) => inRange(manausDate(new Date(p.created_at as string))))
+        const sum = (m: string) => pays.filter((p) => p.method === m).reduce((a, p) => a + (p.amount_cents as number), 0)
+        const total = pays.reduce((a, p) => a + (p.amount_cents as number), 0)
+        const paid = (k: string) => entries.filter((e) => e.kind === k && e.paid_at && inRange(e.paid_date as string))
+        const other = paid('receivable').reduce((a, e) => a + (e.paid_amount_cents as number), 0)
+        const exp = paid('payable').reduce((a, e) => a + (e.paid_amount_cents as number), 0)
+        const byCat = new Map<string, number>()
+        for (const e of paid('payable')) byCat.set(catName(e.category_id), (byCat.get(catName(e.category_id)) ?? 0) + (e.paid_amount_cents as number))
+        const days: Json[] = []
+        for (let d = from; d <= to; d = addMonths(d, 0) === d ? new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10) : d) {
+          days.push({ date: d,
+            income_cents: pays.filter((p) => manausDate(new Date(p.created_at as string)) === d).reduce((a, p) => a + (p.amount_cents as number), 0)
+              + paid('receivable').filter((e) => e.paid_date === d).reduce((a, e) => a + (e.paid_amount_cents as number), 0),
+            expense_cents: paid('payable').filter((e) => e.paid_date === d).reduce((a, e) => a + (e.paid_amount_cents as number), 0) })
+          if (days.length > 400) break
+        }
+        const today = manausDate()
+        const open = (k: string) => entries.filter((e) => e.kind === k && !e.paid_at)
+        const plus7 = new Date(Date.parse(today + 'T12:00:00Z') + 7 * 86400000).toISOString().slice(0, 10)
+        const s = (l: Json[]) => l.reduce((a, e) => a + (e.amount_cents as number), 0)
+        return json(route, {
+          sales: { cash_cents: sum('cash'), pix_cents: sum('pix'), debit_cents: sum('debit'), credit_cents: sum('credit'), total_cents: total },
+          other_income_cents: other, expenses_cents: exp, result_cents: total + other - exp,
+          expenses_by_category: [...byCat].map(([category, cents]) => ({ category, cents })).sort((a, b) => b.cents - a.cents),
+          days,
+          pending: {
+            payables_open_cents: s(open('payable')), payables_overdue_cents: s(open('payable').filter((e) => (e.due_date as string) < today)),
+            payables_next7_cents: s(open('payable').filter((e) => (e.due_date as string) >= today && (e.due_date as string) <= plus7)),
+            receivables_open_cents: s(open('receivable')), receivables_overdue_cents: s(open('receivable').filter((e) => (e.due_date as string) < today)),
+          },
+          loose_withdrawals_cents: movements.filter((m) => m.kind === 'withdrawal' && !m.entry_id).reduce((a, m) => a + (m.amount_cents as number), 0),
+        })
+      }
+      if (fn === 'sales_report') {
+        if (opts.role !== 'owner') return json(route, { code: '42501', message: 'Só o dono pode acessar o financeiro.' }, 403)
+        const from = body.p_from as string, to = body.p_to as string
+        const os = orders.filter((o) => (o.business_date as string) >= from && (o.business_date as string) <= to)
+        const ok = os.filter((o) => o.status !== 'cancelled')
+        const revenue = ok.reduce((a, o) => a + (o.total_cents as number), 0)
+        const by = <T,>(key: (o: Json) => T) => {
+          const m = new Map<T, { n: number; c: number }>()
+          for (const o of ok) m.set(key(o), { n: (m.get(key(o))?.n ?? 0) + 1, c: (m.get(key(o))?.c ?? 0) + (o.total_cents as number) })
+          return m
+        }
+        const prod = new Map<string, { q: number; c: number }>()
+        for (const o of ok) for (const it of o.order_items as Json[]) {
+          const k = it.product_name as string
+          prod.set(k, { q: (prod.get(k)?.q ?? 0) + (it.quantity as number), c: (prod.get(k)?.c ?? 0) + (it.quantity as number) * (it.unit_price_cents as number) })
+        }
+        const hours = new Map<number, number>()
+        for (const o of ok) { const h = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'America/Manaus' }).format(new Date(o.created_at as string))); hours.set(h, (hours.get(h) ?? 0) + 1) }
+        const dayList: Json[] = []
+        for (let d = from; d <= to; d = new Date(Date.parse(d + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)) {
+          const od = ok.filter((o) => o.business_date === d)
+          dayList.push({ date: d, count: od.length, cents: od.reduce((a, o) => a + (o.total_cents as number), 0) })
+          if (dayList.length > 400) break
+        }
+        return json(route, {
+          orders: ok.length, revenue_cents: revenue, average_ticket_cents: ok.length ? Math.round(revenue / ok.length) : 0,
+          cancelled: os.length - ok.length, cancelled_cents: os.filter((o) => o.status === 'cancelled').reduce((a, o) => a + (o.total_cents as number), 0),
+          unpaid_cents: ok.filter((o) => o.paid_at === null).reduce((a, o) => a + (o.total_cents as number), 0),
+          by_channel: [...by((o) => o.channel as string)].map(([channel, v]) => ({ channel, count: v.n, cents: v.c })).sort((a, b) => b.cents - a.cents),
+          top_products: [...prod].map(([name, v]) => ({ name, quantity: v.q, cents: v.c })).sort((a, b) => b.quantity - a.quantity).slice(0, 10),
+          by_hour: [...hours].map(([hour, count]) => ({ hour, count })).sort((a, b) => a.hour - b.hour),
+          days: dayList,
+        })
+      }
       return json(route, { message: 'rpc desconhecida' }, 404)
     }
 
@@ -211,6 +332,22 @@ export async function setup(
         return json(route, products)
       case 'dining_tables':
         return json(route, tables)
+      case 'finance_categories': {
+        if (req.method() === 'POST') { const b = req.postDataJSON() as Json; fcats.push({ id: `fc${fcats.length + 1}`, active: true, created_at: T0, ...b }); return json(route, [], 201) }
+        if (req.method() === 'PATCH') { const id = (url.searchParams.get('id') ?? '').slice(3); Object.assign(fcats.find((c) => c.id === id) ?? {}, req.postDataJSON()); return route.fulfill({ status: 204, headers: cors }) }
+        let list = fcats
+        const kind = url.searchParams.get('kind'); if (kind?.startsWith('eq.')) list = list.filter((c) => c.kind === kind.slice(3))
+        if (url.searchParams.get('active') === 'eq.true') list = list.filter((c) => c.active)
+        return json(route, list)
+      }
+      case 'finance_entries': {
+        const id = (url.searchParams.get('id') ?? '').slice(3)
+        if (req.method() === 'PATCH') { Object.assign(entries.find((e) => e.id === id) ?? {}, req.postDataJSON()); return route.fulfill({ status: 204, headers: cors }) }
+        if (req.method() === 'DELETE') { const i = entries.findIndex((e) => e.id === id); if (i >= 0) entries.splice(i, 1); return route.fulfill({ status: 204, headers: cors }) }
+        let list = entries
+        const kind = url.searchParams.get('kind'); if (kind?.startsWith('eq.')) list = list.filter((e) => e.kind === kind.slice(3))
+        return json(route, list.map((e) => ({ ...e, finance_categories: { name: catName(e.category_id) } })))
+      }
       case 'cash_movements':
         return json(route, [...movements].reverse())
       case 'payments':
@@ -234,5 +371,5 @@ export async function setup(
     }
   })
 
-  return { calls, orders, payments, movements, pageErrors }
+  return { calls, orders, payments, movements, entries, pageErrors }
 }
