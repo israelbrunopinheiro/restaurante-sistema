@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import VersionTag from '../VersionTag'
 
 /** Moldura da área pública: só o nome do restaurante, sem menu da equipe. */
 export default function PublicShell({ name, children }: { name?: string; children: ReactNode }) {
@@ -16,6 +17,7 @@ export default function PublicShell({ name, children }: { name?: string; childre
         </div>
       </header>
       <main className="mx-auto w-full max-w-xl flex-1 px-4 py-4">{children}</main>
+      <VersionTag />
     </div>
   )
 }

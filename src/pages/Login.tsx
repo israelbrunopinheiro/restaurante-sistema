@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { Button, Card, ErrorBox, Field, Notice, Spinner, inputClass } from '../components/ui'
+import VersionTag from '../components/VersionTag'
 
 export default function Login() {
   const { session, loading, settings, signIn, signUp } = useAuth()
@@ -107,6 +108,7 @@ export default function Login() {
             </p>
           )}
         </Card>
+        <VersionTag />
       </div>
     </div>
   )

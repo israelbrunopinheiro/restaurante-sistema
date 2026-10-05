@@ -116,13 +116,14 @@ test('validações: mesa, telefone e endereço são exigidos antes de enviar', a
 test('lista de pedidos mostra observações em destaque e avança o status', async ({ page }) => {
   const { calls, pageErrors } = await setup(page, { role: 'attendant', orders: [seedOrder] })
   await page.goto('/pedidos')
+  await page.getByRole('radio', { name: /Lista/ }).click() // a visão padrão agora é a esteira
 
   const card = page.getByTestId('order-7')
   await expect(card).toContainText('Mesa 2')
   await expect(card).toContainText('2× Feijoada')
   await expect(card).toContainText('⚠ sem cebola')
   await expect(card).toContainText('Cliente com pressa')
-  await expect(card.getByText('Novo')).toBeVisible()
+  await expect(card.getByText('Novo', { exact: true }).first()).toBeVisible()
 
   await card.getByRole('button', { name: 'Iniciar preparo' }).click()
   await expect.poll(() => calls.rpc.map((c) => c.name)).toContain('set_order_status')

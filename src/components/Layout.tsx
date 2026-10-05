@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import type { AppRole } from '../lib/orders'
 import { roleLabel } from '../lib/orders'
+import VersionTag from './VersionTag'
 
 const tabs: { to: string; label: string; roles: AppRole[] }[] = [
   { to: '/novo-pedido', label: 'Novo pedido', roles: ['owner', 'attendant'] },
@@ -56,6 +57,7 @@ export default function Layout() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-4">
         <Outlet />
       </main>
+      <VersionTag />
     </div>
   )
 }

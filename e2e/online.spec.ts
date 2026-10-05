@@ -1,5 +1,5 @@
 /** Cardápio online (cliente sem login) e os controles do dono — com a rede simulada. */
-import { expect, test } from '@playwright/test'
+import { devices, expect, test } from '@playwright/test'
 import { setup, tables } from './mock'
 
 const TOK1 = tables[0].qr_token
@@ -177,6 +177,7 @@ test('pedido online aparece para a equipe com etiqueta e telefone formatado', as
   // a equipe vê o mesmo pedido (mesmo "banco" simulado: reaproveita a lista)
   await setup(page, { role: 'attendant', orders: [orders[0]], online: { open: true } })
   await page.goto('/pedidos')
+  await page.getByRole('radio', { name: /Lista/ }).click() // a visão padrão agora é a esteira
   const card = page.getByTestId('order-1')
   await expect(card).toContainText('🌐 Online')
   await expect(card).toContainText('Mesa 1')
@@ -217,4 +218,35 @@ test('digitar nos campos do pedido (tecla por tecla) não rouba o foco para o "X
   // e a janela continua aberta (o foco no "X" + espaço/enter fecharia)
   await expect(d).toBeVisible()
   await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
+})
+
+test.describe('celular (toque na tela)', () => {
+  // mesmas características do Pixel 5 (tela, toque, celular), no Chromium já instalado
+  const { defaultBrowserType: _ignorado, ...pixel5 } = devices['Pixel 5']
+  void _ignorado
+  test.use(pixel5)
+
+  test('tocar nos campos e digitar tecla por tecla funciona no celular', async ({ page }) => {
+    await setup(page, { role: 'attendant', online: { open: true } })
+    await page.goto('/pedir')
+    await page.getByRole('radio', { name: /Retirar no local/ }).tap()
+    await page.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).tap()
+    await page.getByRole('button', { name: /Ver pedido/ }).tap()
+    const d = page.getByRole('dialog')
+
+    const nome = d.getByLabel('Seu nome')
+    await nome.tap()
+    await page.keyboard.type('Maria da Silva', { delay: 25 })
+    await expect(nome).toHaveValue('Maria da Silva')
+    await expect(nome).toBeFocused()
+
+    const tel = d.getByLabel('Telefone com DDD')
+    await tel.tap()
+    await page.keyboard.type('(92) 99999-0000', { delay: 25 })
+    await expect(tel).toHaveValue('(92) 99999-0000')
+    await expect(tel).toBeFocused()
+
+    await expect(d).toBeVisible()
+    await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
+  })
 })

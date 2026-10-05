@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorBox, Spinner, errorMessage } from '../components/ui'
+import OrderBelt from '../components/OrderBelt'
 import OrderItems from '../components/OrderItems'
+import StatusTrack from '../components/StatusTrack'
 import { useNow } from '../hooks/useNow'
 import { useOrders } from '../hooks/useOrders'
 import { setOrderStatus } from '../lib/api'
@@ -21,6 +23,16 @@ import {
 } from '../lib/orders'
 
 type Filter = 'open' | 'delivered' | 'cancelled' | 'all'
+type View = 'belt' | 'list'
+
+const VIEW_KEY = 'pedidos-visao'
+function loadView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'belt'
+  } catch {
+    return 'belt'
+  }
+}
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'open', label: 'Em andamento' },
@@ -45,6 +57,7 @@ export default function Orders() {
   const { orders, loading, error, live, reload } = useOrders('today')
   const now = useNow()
   const [filter, setFilter] = useState<Filter>('open')
+  const [view, setViewState] = useState<View>(loadView)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -59,6 +72,15 @@ export default function Orders() {
     // fila: o mais antigo primeiro; histórico: o mais recente primeiro
     return filter === 'open' ? list : [...list].reverse()
   }, [orders, filter])
+
+  function setView(v: View) {
+    setViewState(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      /* sem armazenamento: só não lembra a escolha */
+    }
+  }
 
   async function change(o: OrderWithItems, to: OrderStatus) {
     let reason: string | undefined
@@ -89,11 +111,48 @@ export default function Orders() {
             <strong>{formatBRL(summary.total)}</strong>
           </p>
         </div>
-        <span className={`text-xs font-medium ${live ? 'text-emerald-700' : 'text-amber-700'}`}>
-          {live ? '● ao vivo' : '○ reconectando…'}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`text-xs font-medium ${live ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {live ? '● ao vivo' : '○ reconectando…'}
+          </span>
+          <div className="flex overflow-hidden rounded-xl border border-stone-300" role="radiogroup" aria-label="Visão dos pedidos">
+            {([['belt', '▦ Esteira'], ['list', '☰ Lista']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                role="radio"
+                aria-checked={view === v}
+                onClick={() => setView(v)}
+                className={`min-h-9 px-3 text-sm font-semibold ${view === v ? 'bg-stone-900 text-white' : 'bg-white text-stone-700 hover:bg-stone-100'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
+      {error && <ErrorBox>{error}</ErrorBox>}
+      {actionError && <ErrorBox>{actionError}</ErrorBox>}
+
+      {view === 'belt' ? (
+        loading ? (
+          <Spinner />
+        ) : (
+          <OrderBelt
+            orders={orders}
+            today={today}
+            now={now}
+            busyId={busyId}
+            onChange={(o, to) => void change(o, to)}
+            onShowList={(f) => {
+              setFilter(f)
+              setView('list')
+            }}
+          />
+        )
+      ) : (
+      <>
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1">
         {FILTERS.map((f) => {
           const n = orders.filter((o) => matches(o, f.id)).length
@@ -111,8 +170,6 @@ export default function Orders() {
         })}
       </div>
 
-      {error && <ErrorBox>{error}</ErrorBox>}
-      {actionError && <ErrorBox>{actionError}</ErrorBox>}
       {loading ? (
         <Spinner />
       ) : shown.length === 0 ? (
@@ -147,6 +204,8 @@ export default function Orders() {
                     )}
                   </div>
                 </div>
+
+                <StatusTrack status={o.status} />
 
                 <OrderItems items={o.order_items} showPrices />
 
@@ -195,6 +254,8 @@ export default function Orders() {
             )
           })}
         </div>
+      )}
+      </>
       )}
     </div>
   )
