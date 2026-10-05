@@ -187,3 +187,34 @@ test('pedido online aparece para a equipe com etiqueta e telefone formatado', as
   await cozinha.goto('/cozinha')
   await expect(cozinha.getByTestId('kitchen-order-1')).toContainText('🌐 online')
 })
+
+test('digitar nos campos do pedido (tecla por tecla) não rouba o foco para o "X"', async ({ page }) => {
+  await setup(page, { role: 'attendant', online: { open: true } })
+  await page.goto('/pedir')
+  await page.getByRole('radio', { name: /Retirar no local/ }).click()
+  await page.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: /Ver pedido/ }).click()
+  const d = page.getByRole('dialog')
+
+  // digita como uma pessoa: uma tecla de cada vez (cada tecla atualiza a tela)
+  const nome = d.getByLabel('Seu nome')
+  await nome.click()
+  await nome.pressSequentially('Maria da Silva', { delay: 20 })
+  await expect(nome).toHaveValue('Maria da Silva')
+  await expect(nome).toBeFocused()
+
+  const tel = d.getByLabel('Telefone com DDD')
+  await tel.click()
+  await tel.pressSequentially('(92) 99999-0000', { delay: 20 })
+  await expect(tel).toHaveValue('(92) 99999-0000')
+
+  const obs = d.getByLabel('Observação de Feijoada')
+  await obs.click()
+  await obs.pressSequentially('sem cebola e sem pimenta', { delay: 20 })
+  await expect(obs).toHaveValue('sem cebola e sem pimenta')
+  await expect(obs).toBeFocused()
+
+  // e a janela continua aberta (o foco no "X" + espaço/enter fecharia)
+  await expect(d).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
+})

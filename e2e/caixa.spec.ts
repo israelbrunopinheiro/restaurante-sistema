@@ -179,3 +179,24 @@ test('cozinha não enxerga o caixa; atendente e dono sim', async ({ page }) => {
   await page2.goto('/')
   await expect(page2.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Caixa' })).toBeVisible()
 })
+
+test('janela de receber: a atualização automática da tela não rouba o foco de quem está digitando', async ({ page }) => {
+  await page.clock.install() // controla o tempo para simular a atualização que a tela faz sozinha a cada 30 s
+  await setup(page, { role: 'attendant', orders: mesa1(), cash: { open: true, opening_cents: 10000 } })
+  await page.goto('/caixa')
+
+  await page.getByTestId('receivable-table:t2').getByRole('button', { name: /Receber/ }).click()
+  const d = page.getByRole('dialog')
+  const recebido = d.getByLabel(/Dinheiro recebido do cliente/)
+  await recebido.click()
+  await recebido.pressSequentially('10', { delay: 20 })
+
+  await page.clock.fastForward(35_000) // a tela do Caixa se atualiza sozinha (relógio e consulta ao banco)
+  await page.waitForTimeout(300)
+  await expect(recebido).toBeFocused()
+
+  await recebido.pressSequentially('0', { delay: 20 })
+  await expect(recebido).toHaveValue('100')
+  await expect(d.getByRole('status').filter({ hasText: 'Troco' })).toContainText(/R\$\s*65,00/) // 100 − 35
+  await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
+})

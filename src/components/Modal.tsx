@@ -1,6 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 
-/** Janela sobre a tela. Fecha com Esc ou clicando fora; o foco vai para o primeiro campo. */
+/**
+ * Janela sobre a tela. Fecha com Esc ou clicando fora.
+ *
+ * O foco é posto no primeiro campo UMA vez, ao abrir (e volta para onde estava ao fechar). Antes isso rodava de novo a
+ * cada atualização da tela, e quem digitava via o foco pular para o "X" de fechar a cada letra.
+ */
 export default function Modal({
   title,
   onClose,
@@ -11,26 +16,41 @@ export default function Modal({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // A função de fechar costuma ser criada de novo a cada atualização do pai; guardamos a mais recente
+  // sem reconfigurar a janela.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
+    const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()
+
+    const root = ref.current
+    const first =
+      root?.querySelector<HTMLElement>('input:not([type="hidden"]), select, textarea') ??
+      root?.querySelector<HTMLElement>('button:not([aria-label="Fechar"])') ??
+      root?.querySelector<HTMLElement>('button')
+    first?.focus()
+
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
+      document.body.style.overflow = prevOverflow
+      previouslyFocused?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div
       className="fixed inset-0 z-30 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) onCloseRef.current()
       }}
     >
       <div
@@ -45,7 +65,7 @@ export default function Modal({
           <button
             type="button"
             aria-label="Fechar"
-            onClick={onClose}
+            onClick={() => onCloseRef.current()}
             className="-mr-2 -mt-1 h-10 w-10 shrink-0 rounded-lg text-xl text-stone-500 hover:bg-stone-100"
           >
             ✕
