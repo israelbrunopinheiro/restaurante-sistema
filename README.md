@@ -95,10 +95,19 @@ npm run test:e2e    # testes de navegador (rede simulada; precisa do Chromium do
 
 ## Publicação (GitHub Pages)
 
-A cada atualização da `main`, o workflow `.github/workflows/publicar.yml` roda os testes, gera o build e publica em
-`https://israelbrunopinheiro.github.io/restaurante-sistema/`.
+Endereço: `https://israelbrunopinheiro.github.io/restaurante-sistema/`
 
-Uso único, no GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+**Caminho atual: branch `gh-pages`** (não depende do GitHub Actions). Para publicar uma versão nova, na raiz do projeto:
+
+```bash
+bash scripts/publicar-branch.sh   # gera o build com o endereço certo e envia para a branch gh-pages
+```
+
+Uso único, no GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch**, Branch `gh-pages`,
+pasta `/ (root)`.
+
+O workflow `.github/workflows/publicar.yml` (GitHub Actions) continua no repositório, mas só roda à mão: a fila de
+execução do GitHub travou mais de uma vez. Para voltar a ele, veja o comentário no topo do arquivo.
 
 Para hospedar em outro lugar (domínio próprio, cPanel, Vercel, Netlify), gere o build e envie a pasta `dist/`:
 

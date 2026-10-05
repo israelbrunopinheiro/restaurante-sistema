@@ -1,11 +1,10 @@
-# Publica o app no GitHub Pages a cada atualização da branch main (depois de passar nos testes).
-# Endereço: https://<usuario>.github.io/<repositorio>/
-# Uso único: no GitHub, Settings → Pages → Build and deployment → Source: "GitHub Actions".
+# Publica o app no GitHub Pages pelo GitHub Actions — agora SOMENTE quando chamado à mão (aba Actions → Run workflow).
+# Motivo: a fila de execução do GitHub travou várias vezes; o caminho padrão passou a ser a branch gh-pages
+# (scripts/publicar-branch.sh), que não depende dessas máquinas. Para voltar à publicação automática, troque
+# o gatilho abaixo para `push: { branches: [main] }` e, em Settings → Pages, escolha Source: "GitHub Actions".
 name: Publicar
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
