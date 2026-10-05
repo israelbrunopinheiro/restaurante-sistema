@@ -1,29 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import QRCode from 'qrcode'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import QrImage from '../components/QrImage'
 import { Button, Card, EmptyState, ErrorBox, Notice, Spinner, errorMessage } from '../components/ui'
 import type { Tables } from '../lib/database.types'
 import { newTableToken, onlineMenuUrl } from '../lib/publicOrder'
 import { supabase } from '../lib/supabase'
-
-function QrImage({ text, label }: { text: string; label: string }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    let cancelled = false
-    QRCode.toDataURL(text, { margin: 1, width: 520, errorCorrectionLevel: 'M' })
-      .then((u) => !cancelled && setSrc(u))
-      .catch(() => !cancelled && setSrc(''))
-    return () => {
-      cancelled = true
-    }
-  }, [text])
-  return src ? (
-    <img src={src} alt={`QR code: ${label}`} className="mx-auto h-56 w-56" />
-  ) : (
-    <div className="mx-auto h-56 w-56 animate-pulse rounded bg-stone-100" aria-hidden />
-  )
-}
 
 /** QR codes para imprimir: um geral (retirada e delivery) e um por mesa (o código da mesa vai dentro do link). */
 export default function QrCodes() {
@@ -97,7 +79,7 @@ export default function QrCodes() {
           <Card className="break-inside-avoid text-center" data-testid="qr-geral">
             <div className="text-lg font-extrabold">{name}</div>
             <div className="mb-2 font-semibold text-brand-700">Retirada e delivery</div>
-            <QrImage text={onlineMenuUrl(origin, base)} label="retirada e delivery" />
+            <QrImage text={onlineMenuUrl(origin, base)} label="retirada e delivery" size={224} />
             <p className="mt-2 text-sm text-stone-600">Aponte a câmera do celular para ver o cardápio e pedir.</p>
             <p className="mt-1 break-all text-[10px] text-stone-400 print:hidden">{onlineMenuUrl(origin, base)}</p>
           </Card>

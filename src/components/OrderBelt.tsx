@@ -1,4 +1,5 @@
-import { Badge, Button } from './ui'
+import { Button } from './ui'
+import OrderTags from './OrderTags'
 import StatusTrack from './StatusTrack'
 import { formatBRL } from '../lib/money'
 import {
@@ -141,12 +142,12 @@ export default function OrderBelt({
                       </ul>
                       {o.notes && <div className="truncate rounded bg-yellow-50 px-2 py-0.5 text-xs text-yellow-900">📝 {o.notes}</div>}
 
-                      <div className="flex flex-wrap items-center gap-1">
-                        {o.source === 'online' && <Badge className="bg-violet-100 text-violet-800">🌐 Online</Badge>}
-                        <Badge className={o.paid_at ? 'bg-emerald-600 text-white' : 'bg-orange-100 text-orange-800'}>
-                          {o.paid_at ? '✓ Pago' : 'A receber'}
-                        </Badge>
-                      </div>
+                      {o.channel === 'delivery' && o.delivery_address && (
+                        <div className="truncate text-xs text-stone-700" title={o.delivery_address}>
+                          📍 {o.delivery_address}
+                        </div>
+                      )}
+                      <OrderTags order={o} />
 
                       <div className="flex items-center justify-between gap-2 border-t border-stone-100 pt-2">
                         <span className="font-bold">{formatBRL(o.total_cents)}</span>

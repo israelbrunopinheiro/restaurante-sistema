@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import PublicShell from '../../components/public/PublicShell'
-import { Badge, Card, ErrorBox, Spinner, errorMessage } from '../../components/ui'
+import QrImage from '../../components/QrImage'
+import { Badge, Button, Card, ErrorBox, Spinner, errorMessage } from '../../components/ui'
 import { getPublicMenu, getPublicOrderStatus } from '../../lib/api'
 import { formatBRL } from '../../lib/money'
 import { elapsedLabel } from '../../lib/orders'
+import { pixPayload } from '../../lib/pix'
 import {
   TRACK_STEPS,
   isFinal,
@@ -14,7 +16,45 @@ import {
   type PublicOrderStatus,
 } from '../../lib/publicOrder'
 
-const channelText = { table: 'Mesa', pickup: 'Retirada', delivery: 'Delivery', whatsapp: 'WhatsApp' } as const
+const channelText = { table: 'Mesa', pickup: '🛍️ Retirada no local', delivery: '🛵 Delivery', whatsapp: 'WhatsApp' } as const
+
+function PixPay({ order }: { order: PublicOrderStatus & { pix: NonNullable<PublicOrderStatus['pix']> } }) {
+  const [copied, setCopied] = useState(false)
+  const code = pixPayload({ ...order.pix, amountCents: order.total_cents, txid: `PED${order.order_number}` })
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 3000)
+    } catch {
+      window.prompt('Copie o código Pix:', code)
+    }
+  }
+  return (
+    <Card className="space-y-3 border-2 border-emerald-500" data-testid="pix-card">
+      <h2 className="text-lg font-bold">⚡ Pague com Pix</h2>
+      <p className="text-sm text-stone-700">
+        Abra o app do seu banco, escolha <strong>Pix</strong> e leia o QR Code ou use o <strong>copia e cola</strong>. O valor já vem preenchido:
+      </p>
+      <div className="text-center text-3xl font-extrabold" data-testid="pix-amount">
+        {formatBRL(order.total_cents)}
+      </div>
+      <div className="flex justify-center">
+        <QrImage text={code} label={`QR Code Pix de ${formatBRL(order.total_cents)}`} size={220} />
+      </div>
+      <div className="space-y-1">
+        <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Pix copia e cola</div>
+        <textarea readOnly rows={3} value={code} onFocus={(e) => e.currentTarget.select()} className="w-full break-all rounded-lg border border-stone-300 bg-stone-50 p-2 font-mono text-xs" aria-label="Código Pix copia e cola" />
+        <Button size="lg" className="w-full" onClick={() => void copy()}>
+          {copied ? '✓ Código copiado' : 'Copiar código Pix'}
+        </Button>
+      </div>
+      <p className="text-xs text-stone-600">
+        Recebedor: <strong>{order.pix.name}</strong>. Se o nome não for esse, não pague. O restaurante confere o Pix no banco antes de liberar o pedido.
+      </p>
+    </Card>
+  )
+}
 
 export default function PublicTrack() {
   const { id = '' } = useParams()
@@ -97,7 +137,7 @@ export default function PublicTrack() {
                 #{order.order_number}
               </h1>
               <div className="text-sm text-stone-600">
-                {order.channel === 'table' && order.table_label ? order.table_label : channelText[order.channel]} · há{' '}
+                <strong>{order.channel === 'table' && order.table_label ? order.table_label : channelText[order.channel]}</strong> · há{' '}
                 {elapsedLabel(order.created_at, now)}
               </div>
             </div>
@@ -129,6 +169,8 @@ export default function PublicTrack() {
           )}
         </Card>
 
+        {order.pix && !order.paid && !cancelled && <PixPay order={{ ...order, pix: order.pix }} />}
+
         <Card className="space-y-2">
           <h2 className="font-bold">Itens</h2>
           <ul className="space-y-1.5">
@@ -140,10 +182,10 @@ export default function PublicTrack() {
             ))}
           </ul>
           <div className="space-y-0.5 border-t border-stone-100 pt-2 text-sm">
-            {order.delivery_fee_cents > 0 && (
-              <div className="flex justify-between text-stone-600">
-                <span>Taxa de entrega</span>
-                <span>{formatBRL(order.delivery_fee_cents)}</span>
+            {order.channel === 'delivery' && (
+              <div className="flex justify-between font-semibold text-amber-900">
+                <span>🛵 Taxa de entrega</span>
+                <span>{order.delivery_fee_cents > 0 ? formatBRL(order.delivery_fee_cents) : 'Grátis'}</span>
               </div>
             )}
             <div className="flex justify-between text-lg font-extrabold">
@@ -151,7 +193,7 @@ export default function PublicTrack() {
               <span>{formatBRL(order.total_cents)}</span>
             </div>
           </div>
-          <p className="text-sm text-stone-600">{order.paid ? '✓ Pagamento recebido.' : `💵 ${paymentNote(order.channel)}`}</p>
+          <p className="text-sm text-stone-600">{order.paid ? '✓ Pagamento recebido.' : `💵 ${paymentNote(order.channel, order.pay_with, order.change_for_cents)}`}</p>
         </Card>
 
         {error && <p className="text-xs text-stone-500">Sem conexão no momento; vamos tentar de novo.</p>}

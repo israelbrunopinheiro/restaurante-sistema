@@ -5,7 +5,7 @@ import type { CashSummary, PaymentRow } from './cash'
 import { toRpcPayments } from './cash'
 import type { EntryKind, FinanceSummary, SalesReport } from './finance'
 import type { OrderChannel, OrderStatus } from './orders'
-import type { PublicMenu, PublicOrderStatus } from './publicOrder'
+import type { PayWith, PublicMenu, PublicOrderStatus } from './publicOrder'
 
 export type NewOrderInput = {
   channel: OrderChannel
@@ -157,7 +157,7 @@ export async function reopenFinanceEntry(entryId: string) {
 // ───────── Cardápio online (público, sem login) ─────────
 
 export async function getPublicMenu(tableToken?: string | null): Promise<PublicMenu> {
-  const { data, error } = await supabase.rpc('public_menu', { p_table_token: tableToken || undefined })
+  const { data, error } = await supabase.rpc('public_menu_v2', { p_table_token: tableToken || undefined })
   if (error) throw error
   return data as unknown as PublicMenu
 }
@@ -170,10 +170,12 @@ export type PublicOrderInput = {
   address?: string
   notes?: string
   tableToken?: string | null
+  payWith?: PayWith | null
+  changeForCents?: number | null
 }
 
 export async function placePublicOrder(i: PublicOrderInput) {
-  const { data, error } = await supabase.rpc('place_public_order', {
+  const { data, error } = await supabase.rpc('place_public_order_v2', {
     p_channel: i.channel,
     p_items: toRpcItems(i.lines),
     p_customer_name: i.name,
@@ -181,13 +183,15 @@ export async function placePublicOrder(i: PublicOrderInput) {
     p_delivery_address: i.address?.trim() || undefined,
     p_notes: i.notes?.trim() || undefined,
     p_table_token: i.tableToken || undefined,
+    p_pay_with: i.payWith || undefined,
+    p_change_for_cents: i.changeForCents || undefined,
   })
   if (error) throw error
   return data as unknown as { id: string; order_number: number; total_cents: number }
 }
 
 export async function getPublicOrderStatus(id: string): Promise<PublicOrderStatus | null> {
-  const { data, error } = await supabase.rpc('public_order_status', { p_order_id: id })
+  const { data, error } = await supabase.rpc('public_order_status_v2', { p_order_id: id })
   if (error) throw error
   return (data as unknown as PublicOrderStatus | null) ?? null
 }

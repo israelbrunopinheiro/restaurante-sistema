@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, EmptyState, ErrorBox, Spinner, errorMessage } from '../components/ui'
 import OrderItems from '../components/OrderItems'
+import OrderTags from '../components/OrderTags'
 import { useBeep } from '../hooks/useBeep'
 import { useNow } from '../hooks/useNow'
 import { useOrders } from '../hooks/useOrders'
@@ -151,6 +152,8 @@ export default function Kitchen() {
                           {elapsedLabel(since, now)}
                         </div>
                       </header>
+
+                      <OrderTags order={o} large />
 
                       <OrderItems items={o.order_items} size="lg" />
 

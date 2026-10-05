@@ -5,10 +5,11 @@ import PublicShell from '../../components/public/PublicShell'
 import { Button, Card, EmptyState, ErrorBox, Field, Spinner, errorMessage, inputClass } from '../../components/ui'
 import { getPublicMenu, placePublicOrder } from '../../lib/api'
 import { addToCart, changeQty, itemCount, setNotes, subtotalCents, type CartLine } from '../../lib/cart'
-import { formatBRL } from '../../lib/money'
+import { formatBRL, parseBRLToCents } from '../../lib/money'
 import {
   isValidPhone,
-  paymentNote,
+  payWithLabel,
+  type PayWith,
   rememberCustomer,
   rememberOrder,
   rememberedCustomer,
@@ -16,6 +17,7 @@ import {
 } from '../../lib/publicOrder'
 
 type Mode = 'table' | 'pickup' | 'delivery'
+const MODE_TEXT: Record<Mode, string> = { table: '🍽️ Mesa', pickup: '🛍️ Retirada no local', delivery: '🛵 Delivery' }
 const newKey = () => globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
 
 export default function PublicOrder() {
@@ -34,6 +36,9 @@ export default function PublicOrder() {
   const [phone, setPhone] = useState(saved.phone)
   const [address, setAddress] = useState('')
   const [notes, setNotesText] = useState('')
+  const [payWith, setPayWith] = useState<PayWith | null>(null)
+  const [needChange, setNeedChange] = useState(false)
+  const [changeText, setChangeText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,7 +54,9 @@ export default function PublicOrder() {
         if (cancelled) return
         setMenu(m)
         if (m.open) {
-          setMode(m.table ? 'table' : m.pickup && !m.delivery ? 'pickup' : m.delivery && !m.pickup ? 'delivery' : 'pickup')
+          // Delivery é a prioridade: vem marcado sempre que estiver disponível (a mesa só vale com o QR dela).
+          setMode(m.table ? 'table' : m.delivery ? 'delivery' : 'pickup')
+          setPayWith(m.pix ? 'pix' : 'cash')
         }
       })
       .catch((e) => !cancelled && setLoadError(errorMessage(e)))
@@ -76,6 +83,8 @@ export default function PublicOrder() {
   const total = subtotal + fee
   const minCents = mode === 'table' ? 0 : (open?.min_cents ?? 0)
   const belowMin = minCents > 0 && subtotal < minCents
+  const needsPayment = mode === 'pickup' || mode === 'delivery'
+  const changeCents = payWith === 'cash' && needChange ? parseBRLToCents(changeText) : null
 
   function validate(): string | null {
     if (!mode) return 'Escolha como quer receber o pedido.'
@@ -84,6 +93,9 @@ export default function PublicOrder() {
     if (!isValidPhone(phone)) return 'Informe um telefone válido, com DDD. Ex.: (92) 99999-0000'
     if (mode === 'delivery' && address.trim().length < 8) return 'Informe o endereço de entrega completo.'
     if (belowMin) return `O pedido mínimo é ${formatBRL(minCents)}.`
+    if (needsPayment && !payWith) return 'Escolha a forma de pagamento.'
+    if (payWith === 'cash' && needChange && (changeCents === null || changeCents < total))
+      return `Informe com qual valor você vai pagar (precisa ser ${formatBRL(total)} ou mais), ou marque "não preciso de troco".`
     return null
   }
 
@@ -101,6 +113,8 @@ export default function PublicOrder() {
         address: mode === 'delivery' ? address : undefined,
         notes,
         tableToken: mode === 'table' ? token : undefined,
+        payWith: needsPayment ? payWith : null,
+        changeForCents: needsPayment && payWith === 'cash' && needChange ? changeCents : null,
       })
       rememberOrder(res.id)
       rememberCustomer(name.trim(), phone.trim())
@@ -168,30 +182,73 @@ export default function PublicOrder() {
               <div className="text-sm text-stone-600">Seu pedido vai direto para a cozinha e para a sua mesa.</div>
             </div>
           </Card>
-        ) : (
-          menu.pickup &&
-          menu.delivery && (
+        ) : menu.pickup && menu.delivery ? (
+          <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Como receber">
-              {(['pickup', 'delivery'] as const).map((m) => (
+              {(['delivery', 'pickup'] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
                   role="radio"
                   aria-checked={mode === m}
                   onClick={() => setMode(m)}
-                  className={`min-h-14 rounded-xl border-2 px-3 text-sm font-semibold ${
+                  className={`min-h-16 rounded-xl border-2 px-3 py-2 text-sm font-semibold ${
                     mode === m ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-200 bg-white text-stone-700'
                   }`}
                 >
-                  {m === 'pickup' ? '🛍️ Retirar no local' : `🛵 Receber em casa${menu.delivery_fee_cents > 0 ? ` (+ ${formatBRL(menu.delivery_fee_cents)})` : ''}`}
+                  {m === 'delivery' ? (
+                    <>
+                      🛵 Delivery
+                      <span className="block text-xs font-bold">
+                        {menu.delivery_fee_cents > 0 ? `Taxa de entrega ${formatBRL(menu.delivery_fee_cents)}` : 'Taxa grátis'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      🛍️ Retirar no local
+                      <span className="block text-xs font-normal">Você busca · sem taxa</span>
+                    </>
+                  )}
                 </button>
               ))}
             </div>
-          )
-        )}
+            {mode === 'delivery' ? (
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                🛵 <strong>Entregamos no seu endereço.</strong>{' '}
+                {menu.delivery_fee_cents > 0 ? (
+                  <>
+                    A taxa de entrega é <strong>{formatBRL(menu.delivery_fee_cents)}</strong> e entra no total do pedido.
+                  </>
+                ) : (
+                  'Sem taxa de entrega.'
+                )}
+              </p>
+            ) : (
+              <p className="rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-800">
+                🛍️ <strong>Retirada no local:</strong> você vem buscar no restaurante. <strong>Não enviamos</strong> esse pedido
+                para entrega.
+              </p>
+            )}
+          </div>
+        ) : null}
         {!menu.table && menu.pickup !== menu.delivery && (
-          <p className="text-sm text-stone-600">
-            {menu.pickup ? '🛍️ Pedidos para retirar no local.' : `🛵 Pedidos para entrega${menu.delivery_fee_cents > 0 ? ` (taxa ${formatBRL(menu.delivery_fee_cents)})` : ''}.`}
+          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {menu.pickup ? (
+              <>
+                🛍️ <strong>Pedidos para retirar no local.</strong>
+              </>
+            ) : (
+              <>
+                🛵 <strong>Entregamos no seu endereço.</strong>{' '}
+                {menu.delivery_fee_cents > 0 ? (
+                  <>
+                    Taxa de entrega: <strong>{formatBRL(menu.delivery_fee_cents)}</strong>.
+                  </>
+                ) : (
+                  'Sem taxa de entrega.'
+                )}
+              </>
+            )}
           </p>
         )}
         {minCents > 0 && <p className="text-sm text-stone-600">Pedido mínimo: {formatBRL(minCents)}.</p>}
@@ -270,8 +327,13 @@ export default function PublicOrder() {
       {count > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto max-w-xl">
+            {mode === 'delivery' && (
+              <p className="mb-1 text-center text-xs font-semibold text-amber-800">
+                🛵 Delivery · {fee > 0 ? `taxa de entrega ${formatBRL(fee)} (já no total)` : 'sem taxa de entrega'}
+              </p>
+            )}
             <Button size="lg" className="w-full" onClick={() => setCheckout(true)}>
-              Ver pedido · {count} {count === 1 ? 'item' : 'itens'} · {formatBRL(subtotal)}
+              Ver pedido · {count} {count === 1 ? 'item' : 'itens'} · {formatBRL(total)}
             </Button>
           </div>
         </div>
@@ -322,14 +384,24 @@ export default function PublicOrder() {
             {lines.length === 0 && <p className="text-sm text-stone-500">Seu pedido está vazio.</p>}
 
             <div className="space-y-1 rounded-xl bg-stone-100 p-3 text-sm">
+              <div className="flex justify-between font-semibold" data-testid="checkout-mode">
+                <span>{MODE_TEXT[mode]}</span>
+                <span>{mode === 'delivery' ? 'entregamos no endereço' : mode === 'pickup' ? 'você busca' : 'na sua mesa'}</span>
+              </div>
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span>{formatBRL(subtotal)}</span>
               </div>
-              {fee > 0 && (
-                <div className="flex justify-between">
+              {mode === 'delivery' && (
+                <div className="flex justify-between font-bold text-amber-900" data-testid="checkout-fee">
+                  <span>🛵 Taxa de entrega</span>
+                  <span>{fee > 0 ? `+ ${formatBRL(fee)}` : 'Grátis'}</span>
+                </div>
+              )}
+              {mode === 'pickup' && (
+                <div className="flex justify-between text-stone-600">
                   <span>Taxa de entrega</span>
-                  <span>{formatBRL(fee)}</span>
+                  <span>não se aplica (retirada)</span>
                 </div>
               )}
               <div className="flex justify-between border-t border-stone-300 pt-1 text-lg font-extrabold">
@@ -366,7 +438,62 @@ export default function PublicOrder() {
               <input className={inputClass} maxLength={200} value={notes} onChange={(e) => setNotesText(e.target.value)} />
             </Field>
 
-            <p className="text-sm text-stone-600">💵 {paymentNote(mode)}</p>
+            {needsPayment ? (
+              <fieldset className="space-y-2">
+                <legend className="mb-1 text-sm font-semibold">Como você vai pagar?</legend>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Forma de pagamento">
+                  {(['pix', 'cash', 'card'] as const)
+                    .filter((m) => m !== 'pix' || open?.pix)
+                    .map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={payWith === m}
+                        onClick={() => setPayWith(m)}
+                        className={`min-h-12 rounded-xl border-2 px-2 text-sm font-semibold ${
+                          payWith === m ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-stone-200 bg-white text-stone-700'
+                        }`}
+                      >
+                        {m === 'pix' ? '⚡ ' : m === 'cash' ? '💵 ' : '💳 '}
+                        {payWithLabel[m]}
+                      </button>
+                    ))}
+                </div>
+                {payWith === 'pix' && (
+                  <p className="text-sm text-stone-700">
+                    Ao enviar o pedido, mostramos o <strong>QR Code</strong> e o <strong>Pix copia e cola</strong> com o valor
+                    exato de <strong>{formatBRL(total)}</strong>.
+                  </p>
+                )}
+                {payWith === 'cash' && (
+                  <div className="space-y-2 text-sm">
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={needChange} onChange={(e) => setNeedChange(e.target.checked)} className="h-5 w-5" />
+                      Preciso de troco
+                    </label>
+                    {needChange && (
+                      <Field label="Vai pagar com qual valor?" hint={`Precisa ser ${formatBRL(total)} ou mais.`}>
+                        <input
+                          className={inputClass}
+                          inputMode="decimal"
+                          value={changeText}
+                          onChange={(e) => setChangeText(e.target.value)}
+                          placeholder="Ex.: 100,00"
+                        />
+                      </Field>
+                    )}
+                  </div>
+                )}
+                {payWith === 'card' && (
+                  <p className="text-sm text-stone-700">
+                    A máquina de cartão {mode === 'delivery' ? 'vai com o entregador' : 'está no balcão'}.
+                  </p>
+                )}
+              </fieldset>
+            ) : (
+              <p className="text-sm text-stone-600">💵 Você paga no final, na mesa (dinheiro, Pix ou cartão).</p>
+            )}
             {error && <ErrorBox>{error}</ErrorBox>}
             <div className="flex gap-2">
               <Button variant="ghost" size="lg" onClick={() => setCheckout(false)} disabled={busy}>

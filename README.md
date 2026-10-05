@@ -62,9 +62,18 @@ escolhe os itens, informa nome e telefone (e endereço, no delivery), envia e **
   quais modalidades aceitar (retirada, delivery, pedido pela mesa) e o pedido mínimo.
 - **QR codes** (`/qr`, só o dono): um geral e um por mesa, prontos para imprimir. Cada mesa tem um código secreto; "Trocar
   código" invalida o QR antigo.
-- **Pagamento** na mesa, na retirada ou na entrega (pelo Caixa). Pagamento online ainda não existe.
-- **Segurança.** Quem não tem login só acessa 3 funções do banco: `public_menu`, `place_public_order` e
-  `public_order_status`; as tabelas continuam fechadas. O cliente envia apenas produto, quantidade e observação (o preço
+- **Delivery é a prioridade:** vem marcado ao abrir o cardápio, com a **taxa de entrega** à vista no topo, na barra do carrinho
+  e no resumo do pedido (sempre somada no total, calculada no servidor). Retirada mostra "não enviamos" e sem taxa.
+- **Forma de pagamento** (Pix, dinheiro com troco ou cartão) escolhida pelo cliente. Com **Pix**, depois de enviar o pedido
+  a página de acompanhamento mostra o **QR Code e o "copia e cola"** com o valor exato (BR Code estático, CRC conferido em
+  teste). O dono cadastra a chave em **Configurações → Pix no cardápio online** (com QR de teste). **O sistema não recebe
+  aviso do banco**: o restaurante confere o Pix no extrato e dá baixa no Caixa. A chave só é entregue a quem fez um pedido
+  Pix ainda não pago.
+- **Clareza para a equipe** (contra "esperto"): Esteira, Lista, Cozinha e Caixa mostram etiquetas grandes — `🛵 DELIVERY · taxa
+  R$ 5,00` ou `🛍️ RETIRADA · não entregar` — e o pagamento declarado (`⚡ Pix · confira no banco`, `💵 troco p/ R$ 50`, `💳 Cartão`).
+  Ao receber no Caixa, a forma escolhida vem pré-selecionada, com aviso para só dar baixa do Pix depois de ver o extrato.
+- **Segurança.** Quem não tem login só acessa 3 funções do banco: `public_menu_v2`, `place_public_order_v2` e
+  `public_order_status_v2` (as versões sem Pix continuam no banco); as tabelas continuam fechadas. O cliente envia apenas produto, quantidade e observação (o preço
   vem do banco), com limites de tamanho e de valor (teto de R$ 3.000 por pedido). **Limites contra abuso:** 4 pedidos por
   telefone por hora, 8 por aparelho (IP) a cada 10 minutos, 6 por mesa a cada 10 minutos e 60 no total a cada 10
   minutos. O acompanhamento só mostra itens e andamento (nunca telefone ou endereço) e só funciona para pedidos online.
@@ -128,7 +137,8 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 - **RLS em todas as tabelas.** Sem login não se lê nada. O cardápio só o dono altera. Pedidos **não** são gravados
   direto: passam por `create_order` e `set_order_status`, que validam perfil, itens, preços e transições de status.
 - **Cardápio online:** `settings.online_*`, `dining_tables.qr_token`, `orders.source`/`client_hash`; funções públicas
-  (únicas liberadas para `anon`) em `20261006000008_online_funcoes.sql`.
+  (únicas liberadas para `anon`) em `20261006000008_online_funcoes.sql`; Pix e forma de pagamento em `…09` e `…10`
+  (`settings.pix_*`, `orders.pay_with`/`change_for_cents`).
 - **Financeiro:** `finance_categories` e `finance_entries` (só o dono lê). Lançamentos são criados por
   `create_finance_entry` (com repetição mensal) e baixados por `pay_finance_entry` / `reopen_finance_entry`; edição e
   exclusão diretas só valem para lançamentos **não baixados**. `finance_summary` e `sales_report` geram os relatórios.
@@ -144,7 +154,7 @@ Migrações em `supabase/migrations/`, aplicadas em ordem. Pontos importantes:
 
 ## Próximas fases
 
-- Pagamento online (Pix) no cardápio online, horário de funcionamento automático e bloqueio de telefones.
+- Confirmação automática do Pix (exige conta de pagamentos com API/webhook), horário de funcionamento automático e bloqueio de telefones.
 - **1.5** Atendente de WhatsApp com IA (API oficial do WhatsApp Business): lê a mensagem, confirma o pedido com o
   cliente e lança direto na cozinha.
 - Depois: taxa de serviço (10%) e desconto na conta, editar pedido já enviado, impressão de comanda, fichas

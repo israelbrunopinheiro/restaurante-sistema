@@ -18,6 +18,8 @@ type OrderRow = {
   notes: string | null
   order_number: number
   paid_at: string | null
+  pay_with: 'pix' | 'cash' | 'card' | null
+  change_for_cents: number | null
   source: 'staff' | 'online'
   client_hash: string | null
   status: Database['public']['Enums']['order_status']
@@ -312,6 +314,9 @@ export type Database = {
           online_open: boolean
           online_pickup: boolean
           online_table: boolean
+          pix_city: string | null
+          pix_key: string | null
+          pix_name: string | null
           restaurant_name: string
           updated_at: string
         }
@@ -323,6 +328,9 @@ export type Database = {
           online_open?: boolean
           online_pickup?: boolean
           online_table?: boolean
+          pix_city?: string | null
+          pix_key?: string | null
+          pix_name?: string | null
           restaurant_name?: string
         }
         Relationships: []
@@ -342,7 +350,23 @@ export type Database = {
         }
         Returns: Json
       }
+      place_public_order_v2: {
+        Args: {
+          p_channel: string
+          p_change_for_cents?: number
+          p_customer_name: string
+          p_customer_phone: string
+          p_delivery_address?: string
+          p_items: Json
+          p_notes?: string
+          p_pay_with?: string
+          p_table_token?: string
+        }
+        Returns: Json
+      }
       public_menu: { Args: { p_table_token?: string }; Returns: Json }
+      public_menu_v2: { Args: { p_table_token?: string }; Returns: Json }
+      public_order_status_v2: { Args: { p_order_id: string }; Returns: Json }
       public_order_status: { Args: { p_order_id: string }; Returns: Json }
       create_finance_entry: {
         Args: {

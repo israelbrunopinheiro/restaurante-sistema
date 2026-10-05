@@ -6,6 +6,8 @@ import type { Tables } from '../lib/database.types'
 import { centsToInput, parseBRLToCents } from '../lib/money'
 import { roleLabel, type AppRole } from '../lib/orders'
 import { onlineMenuUrl } from '../lib/publicOrder'
+import { asciiUpper, normalizePixKey, pixPayload } from '../lib/pix'
+import QrImage from '../components/QrImage'
 import { supabase } from '../lib/supabase'
 
 type DiningTable = Tables<'dining_tables'>
@@ -65,11 +67,35 @@ function OnlineSection() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [pixKey, setPixKey] = useState(settings?.pix_key ?? '')
+  const [pixName, setPixName] = useState(settings?.pix_name ?? settings?.restaurant_name ?? '')
+  const [pixCity, setPixCity] = useState(settings?.pix_city ?? '')
   if (!settings) return null
+
+  const pixSaved =
+    settings.pix_key && settings.pix_name && settings.pix_city
+      ? { key: settings.pix_key, name: settings.pix_name, city: settings.pix_city }
+      : null
+
+  async function savePix(clear = false) {
+    if (clear) {
+      await save({ pix_key: null, pix_name: null, pix_city: null })
+      setPixKey('')
+      return
+    }
+    const key = normalizePixKey(pixKey)
+    const name = asciiUpper(pixName, 25)
+    const city = asciiUpper(pixCity, 15)
+    if (!key || !name || !city) return setError('Preencha a chave Pix, o nome do recebedor e a cidade.')
+    await save({ pix_key: key, pix_name: name, pix_city: city })
+    setPixKey(key)
+    setPixName(name)
+    setPixCity(city)
+  }
 
   const link = onlineMenuUrl(window.location.origin, import.meta.env.BASE_URL)
 
-  async function save(patch: Partial<Pick<Tables<'settings'>, 'online_open' | 'online_pickup' | 'online_delivery' | 'online_table' | 'online_min_cents'>>) {
+  async function save(patch: Partial<Pick<Tables<'settings'>, 'online_open' | 'online_pickup' | 'online_delivery' | 'online_table' | 'online_min_cents' | 'pix_key' | 'pix_name' | 'pix_city'>>) {
     setError(null)
     setNotice(null)
     const { error } = await supabase.from('settings').update(patch).eq('id', true)
@@ -155,6 +181,47 @@ function OnlineSection() {
           </Button>
         </div>
 
+        <div className="space-y-3 rounded-xl border border-stone-200 p-3" data-testid="pix-config">
+          <div>
+            <div className="font-semibold">⚡ Pix no cardápio online</div>
+            <p className="text-sm text-stone-600">
+              {pixSaved
+                ? '🟢 Pix ativo: o cliente que escolher Pix vê o QR Code e o copia e cola com o valor exato do pedido.'
+                : 'Informe a sua chave Pix para o cliente poder pagar pelo QR Code. Sem chave, a opção Pix não aparece.'}
+            </p>
+          </div>
+          <Field label="Chave Pix" hint="CPF, CNPJ, celular, e-mail ou chave aleatória. O dinheiro cai direto na sua conta.">
+            <input className={inputClass} value={pixKey} onChange={(e) => setPixKey(e.target.value)} autoComplete="off" maxLength={77} />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nome do recebedor" hint="Como aparece no app do cliente (até 25 letras).">
+              <input className={inputClass} value={pixName} onChange={(e) => setPixName(e.target.value)} maxLength={40} />
+            </Field>
+            <Field label="Cidade" hint="Até 15 letras. Ex.: Manaus">
+              <input className={inputClass} value={pixCity} onChange={(e) => setPixCity(e.target.value)} maxLength={30} />
+            </Field>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void savePix()}>
+              Salvar Pix
+            </Button>
+            {pixSaved && (
+              <Button variant="ghost" onClick={() => void savePix(true)}>
+                Desligar Pix
+              </Button>
+            )}
+          </div>
+          {pixSaved && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-stone-100 p-2 text-sm">
+              <QrImage text={pixPayload(pixSaved)} label="teste do Pix (sem valor)" size={96} />
+              <p className="min-w-0 flex-1 text-stone-700">
+                <strong>Teste:</strong> leia este QR com o app do seu banco (não precisa pagar). Deve aparecer o nome{' '}
+                <strong>{pixSaved.name}</strong>. O Pix é conferido por você no extrato; o sistema não recebe aviso do banco.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="space-y-2 rounded-xl bg-stone-100 p-3">
           <div className="text-sm font-medium text-stone-700">Link do cardápio online</div>
           <div className="break-all rounded-lg bg-white p-2 text-sm" data-testid="online-link">
@@ -181,8 +248,7 @@ function OnlineSection() {
           </div>
         </div>
         <p className="text-xs text-stone-500">
-          Os pedidos online chegam na cozinha com a etiqueta <strong>🌐 Online</strong>. O cliente paga na mesa, na retirada ou
-          na entrega, e acompanha o andamento por uma página própria. Há limites automáticos por telefone, aparelho e mesa
+          Os pedidos online chegam na cozinha com a etiqueta <strong>🌐 Online</strong>, o tipo (<strong>Delivery</strong> ou <strong>Retirada</strong>), a taxa e a forma de pagamento que o cliente escolheu. O cliente acompanha o andamento por uma página própria. Há limites automáticos por telefone, aparelho e mesa
           contra pedidos falsos; se alguém abusar, cancele o pedido em Pedidos.
         </p>
       </Card>

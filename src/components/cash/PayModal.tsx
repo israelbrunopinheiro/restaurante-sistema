@@ -30,8 +30,13 @@ export default function PayModal({
   onPaid: (message: string) => void
 }) {
   const total = group.totalCents
-  const [rows, setRows] = useState<PaymentRow[]>(() => singleRow('cash', total, newKey()))
-  const [received, setReceived] = useState('')
+  // O que o cliente declarou no cardápio online (só quando todos os pedidos da conta dizem o mesmo)
+  const declared = group.orders.every((o) => o.pay_with && o.pay_with === group.orders[0].pay_with) ? group.orders[0].pay_with : null
+  const declaredChange = declared === 'cash' && group.orders.length === 1 ? group.orders[0].change_for_cents : null
+  const [rows, setRows] = useState<PaymentRow[]>(() =>
+    singleRow(declared === 'pix' ? 'pix' : declared === 'card' ? 'credit' : 'cash', total, newKey()),
+  )
+  const [received, setReceived] = useState(declaredChange ? centsToInput(declaredChange) : '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -83,6 +88,16 @@ export default function PayModal({
             <span className="text-3xl font-extrabold">{formatBRL(total)}</span>
           </div>
         </div>
+
+        {declared && (
+          <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900" data-testid="declared-pay">
+            O cliente escolheu pagar com{' '}
+            <strong>{declared === 'pix' ? '⚡ Pix' : declared === 'cash' ? '💵 Dinheiro' : '💳 Cartão'}</strong>.{' '}
+            {declared === 'pix' && <strong>Só marque como recebido depois de ver o Pix no extrato do banco.</strong>}
+            {declared === 'cash' && (declaredChange ? `Troco para ${formatBRL(declaredChange)}.` : 'Sem troco.')}
+            {declared === 'card' && 'Escolha débito ou crédito abaixo.'}
+          </div>
+        )}
 
         <div>
           <div className="mb-2 text-sm font-medium text-stone-700">Forma de pagamento (um toque paga a conta toda)</div>

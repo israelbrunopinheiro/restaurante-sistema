@@ -2,6 +2,9 @@ import type { OrderChannel, OrderStatus } from './orders'
 
 // ───────── Respostas das funções públicas do banco ─────────
 
+export type PayWith = 'pix' | 'cash' | 'card'
+export const payWithLabel: Record<PayWith, string> = { pix: 'Pix', cash: 'Dinheiro', card: 'Cartão' }
+
 export type PublicProduct = { id: string; name: string; description: string | null; price_cents: number }
 export type PublicCategory = { id: string; name: string; products: PublicProduct[] }
 
@@ -14,6 +17,7 @@ export type PublicMenu =
       delivery: boolean
       delivery_fee_cents: number
       min_cents: number
+      pix: boolean
       table_requested: boolean
       table: { label: string } | null
       categories: PublicCategory[]
@@ -27,6 +31,9 @@ export type PublicOrderStatus = {
   delivery_fee_cents: number
   created_at: string
   paid: boolean
+  pay_with: PayWith | null
+  change_for_cents: number | null
+  pix: { key: string; name: string; city: string } | null
   table_label: string | null
   items: { name: string; quantity: number; notes: string | null }[]
 }
@@ -97,12 +104,14 @@ export function statusMessage(channel: OrderChannel, status: OrderStatus): strin
   }
 }
 
-export function paymentNote(channel: OrderChannel): string {
-  return channel === 'table'
-    ? 'Você paga no final, na mesa (dinheiro, Pix ou cartão).'
-    : channel === 'pickup'
-      ? 'Você paga ao retirar (dinheiro, Pix ou cartão).'
-      : 'Você paga na entrega (dinheiro, Pix ou cartão).'
+/** Frase de pagamento para o cliente, conforme o que ele escolheu. */
+export function paymentNote(channel: OrderChannel, payWith?: PayWith | null, changeForCents?: number | null): string {
+  const when = channel === 'table' ? 'no final, na mesa' : channel === 'pickup' ? 'ao retirar' : 'na entrega'
+  if (payWith === 'pix') return 'Pagamento por Pix.'
+  if (payWith === 'cash')
+    return changeForCents ? `Pagamento em dinheiro ${when} (troco para ${(changeForCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}).` : `Pagamento em dinheiro ${when} (sem troco).`
+  if (payWith === 'card') return `Pagamento no cartão ${when}.`
+  return `Você paga ${when} (dinheiro, Pix ou cartão).`
 }
 
 export function isFinal(status: OrderStatus): boolean {

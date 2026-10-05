@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorBox, Spinner, errorMessage } from '../components/ui'
 import OrderBelt from '../components/OrderBelt'
 import OrderItems from '../components/OrderItems'
+import OrderTags from '../components/OrderTags'
 import StatusTrack from '../components/StatusTrack'
 import { useNow } from '../hooks/useNow'
 import { useOrders } from '../hooks/useOrders'
@@ -187,7 +188,6 @@ export default function Orders() {
                       <span className="text-2xl font-extrabold">#{o.order_number}</span>
                       <span aria-hidden>{channelIcon[o.channel]}</span>
                       <span className="truncate font-semibold">{orderTitle(o)}</span>
-                      {o.source === 'online' && <Badge className="bg-violet-100 text-violet-800">🌐 Online</Badge>}
                     </div>
                     <div className="text-xs text-stone-500">
                       {channelLabel[o.channel]} · {formatTime(o.created_at)}
@@ -197,14 +197,10 @@ export default function Orders() {
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <Badge className={statusStyle[o.status]}>{statusLabel[o.status]}</Badge>
-                    {o.status !== 'cancelled' && (
-                      <Badge className={o.paid_at ? 'bg-emerald-600 text-white' : 'bg-orange-100 text-orange-800'}>
-                        {o.paid_at ? '✓ Pago' : 'A receber'}
-                      </Badge>
-                    )}
                   </div>
                 </div>
 
+                <OrderTags order={o} large />
                 <StatusTrack status={o.status} />
 
                 <OrderItems items={o.order_items} showPrices />

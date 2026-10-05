@@ -35,7 +35,7 @@ test('QR da mesa: cliente monta o pedido, envia e acompanha', async ({ page }) =
   await d.getByLabel('Telefone com DDD').fill('99999')
   await d.getByRole('button', { name: /Enviar pedido/ }).click()
   await expect(d.getByRole('alert')).toContainText('telefone válido')
-  expect(calls.rpc.filter((c) => c.name === 'place_public_order')).toHaveLength(0)
+  expect(calls.rpc.filter((c) => c.name === 'place_public_order_v2')).toHaveLength(0)
 
   await d.getByLabel('Telefone com DDD').fill('(92) 97777-6666')
   await d.getByRole('button', { name: /Enviar pedido/ }).click()
@@ -47,7 +47,7 @@ test('QR da mesa: cliente monta o pedido, envia e acompanha', async ({ page }) =
   await expect(page.getByText('📝 sem cebola')).toBeVisible()
   await expect(page.getByText(/Você paga no final, na mesa/)).toBeVisible()
 
-  const body = calls.rpc.find((c) => c.name === 'place_public_order')!.body
+  const body = calls.rpc.find((c) => c.name === 'place_public_order_v2')!.body
   expect(body).toMatchObject({ p_channel: 'table', p_table_token: TOK1, p_customer_name: 'Carlos', p_customer_phone: '(92) 97777-6666' })
   expect(body.p_items).toEqual([
     { product_id: 'p1', quantity: 2, notes: 'sem cebola' },
@@ -83,12 +83,12 @@ test('delivery: mostra a taxa, exige endereço e respeita o pedido mínimo', asy
   const { calls } = await setup(page, { role: 'attendant', online: { open: true, min_cents: 4000 } })
   await page.goto('/pedir')
   await expect(page.getByText('Pedido mínimo: R$ 40,00.')).toBeVisible()
-  await page.getByRole('radio', { name: /Receber em casa/ }).click()
+  await expect(page.getByRole('radio', { name: /Delivery/ })).toHaveAttribute('aria-checked', 'true') // delivery já vem marcado
   await page.getByTestId('prod-p2').getByRole('button', { name: 'Adicionar' }).click()
   await page.getByRole('button', { name: /Ver pedido/ }).click()
   const d = page.getByRole('dialog')
   await expect(d.getByText(/Faltam R\$\s*32,00 para o pedido mínimo/)).toBeVisible()
-  await expect(d.getByText('Taxa de entrega')).toBeVisible()
+  await expect(d.getByTestId('checkout-fee')).toContainText('R$ 5,00')
   await expect(d.getByTestId('checkout-total')).toHaveText(/R\$\s*13,00/) // 8 + taxa 5
 
   await d.getByRole('button', { name: 'Aumentar Suco de cupuaçu no pedido' }).click()
@@ -100,7 +100,7 @@ test('delivery: mostra a taxa, exige endereço e respeita o pedido mínimo', asy
   await d.getByLabel('Endereço de entrega').fill('Rua das Palmeiras, 120')
   await d.getByRole('button', { name: /Enviar pedido/ }).click()
   await expect(page).toHaveURL(/\/pedir\/pedido\/o1$/)
-  expect(calls.rpc.find((c) => c.name === 'place_public_order')!.body).toMatchObject({
+  expect(calls.rpc.find((c) => c.name === 'place_public_order_v2')!.body).toMatchObject({
     p_channel: 'delivery', p_delivery_address: 'Rua das Palmeiras, 120',
   })
   await expect(page.getByText('Taxa de entrega')).toBeVisible()
@@ -249,4 +249,142 @@ test.describe('celular (toque na tela)', () => {
     await expect(d).toBeVisible()
     await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
   })
+})
+
+test('delivery vem marcado, taxa clara em todo lugar e Pix gera QR + copia e cola com o valor exato', async ({ page }) => {
+  const { calls, orders, pageErrors } = await setup(page, { role: 'attendant', online: { open: true, pix: true } })
+  await page.goto('/pedir')
+
+  // prioridade é o delivery: já vem marcado, com a taxa à vista antes de escolher qualquer item
+  await expect(page.getByRole('radio', { name: /Delivery/ })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { name: /Delivery/ })).toContainText('R$ 5,00')
+  await expect(page.locator('p', { hasText: 'Entregamos no seu endereço' })).toContainText('R$ 5,00')
+
+  await page.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).click() // Feijoada
+  await expect(page.getByText(/taxa de entrega R\$\s*5,00 \(já no total\)/)).toBeVisible()
+  await page.getByRole('button', { name: /Ver pedido/ }).click()
+
+  const d = page.getByRole('dialog')
+  await expect(d.getByTestId('checkout-mode')).toContainText('Delivery')
+  await expect(d.getByTestId('checkout-fee')).toContainText('+ R$ 5,00')
+  // Pix já vem escolhido (a chave existe) e avisa que vai gerar o QR com o valor
+  await expect(d.getByRole('radio', { name: /Pix/ })).toHaveAttribute('aria-checked', 'true')
+  await d.getByLabel('Seu nome').fill('Ana')
+  await d.getByLabel('Telefone com DDD').fill('(92) 99999-1111')
+  await d.getByLabel('Endereço de entrega').fill('Av. Djalma Batista, 1000, ap 3')
+  const total = await d.getByTestId('checkout-total').innerText()
+  await d.getByRole('button', { name: /Enviar pedido/ }).click()
+
+  await expect(page).toHaveURL(/\/pedir\/pedido\/o1$/)
+  expect(calls.rpc.find((c) => c.name === 'place_public_order_v2')!.body).toMatchObject({ p_channel: 'delivery', p_pay_with: 'pix' })
+  expect(orders[0].pay_with).toBe('pix')
+
+  const pix = page.getByTestId('pix-card')
+  await expect(pix).toBeVisible()
+  await expect(pix.getByTestId('pix-amount')).toHaveText(total)
+  await expect(pix.getByRole('img')).toBeVisible()
+  const code = await pix.getByLabel('Código Pix copia e cola').inputValue()
+  const { pixPayloadIsValid } = await import('../src/lib/pix')
+  expect(pixPayloadIsValid(code)).toBe(true)
+  expect(code).toContain('contato@exemplo.com')
+  const valor = total.replace(/[^\d,]/g, '').replace(',', '.') // ex.: "40.00"
+  expect(code).toContain(`54${String(valor.length).padStart(2, '0')}${valor}`) // campo 54 = valor exato
+  await expect(page.getByText('🛵 Taxa de entrega')).toBeVisible()
+
+  // depois de pago, o QR some
+  orders[0].paid_at = new Date().toISOString()
+  await page.reload()
+  await expect(page.getByTestId('pix-card')).toHaveCount(0)
+  expect(pageErrors).toEqual([])
+})
+
+test('sem chave Pix a opção Pix não aparece; dinheiro pede troco válido; retirada deixa claro que não entrega', async ({ page }) => {
+  const { calls } = await setup(page, { role: 'attendant', online: { open: true } })
+  await page.goto('/pedir')
+  await page.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).click() // 35,00 + taxa 5,00 = 40,00
+  await page.getByRole('button', { name: /Ver pedido/ }).click()
+  const d = page.getByRole('dialog')
+  await expect(d.getByRole('radio', { name: /Pix/ })).toHaveCount(0)
+  await expect(d.getByRole('radio', { name: /Dinheiro/ })).toHaveAttribute('aria-checked', 'true')
+
+  await d.getByLabel('Seu nome').fill('Beto')
+  await d.getByLabel('Telefone com DDD').fill('(92) 98888-0000')
+  await d.getByLabel('Endereço de entrega').fill('Rua A, 10, Centro')
+  await d.getByLabel('Preciso de troco').check()
+  await d.getByLabel('Vai pagar com qual valor?').fill('30')
+  await d.getByRole('button', { name: /Enviar pedido/ }).click()
+  await expect(d.getByRole('alert')).toContainText('R$ 40,00 ou mais')
+  await d.getByLabel('Vai pagar com qual valor?').fill('50')
+  await d.getByRole('button', { name: /Enviar pedido/ }).click()
+  await expect(page).toHaveURL(/\/pedir\/pedido\/o1$/)
+  expect(calls.rpc.find((c) => c.name === 'place_public_order_v2')!.body).toMatchObject({ p_pay_with: 'cash', p_change_for_cents: 5000 })
+  await expect(page.getByText(/dinheiro .*troco para R\$\s*50,00/)).toBeVisible()
+  await expect(page.getByTestId('pix-card')).toHaveCount(0)
+
+  // retirada: sem taxa e com aviso explícito
+  await page.goto('/pedir')
+  await page.getByRole('radio', { name: /Retirar no local/ }).click()
+  await expect(page.getByText(/Não enviamos/)).toBeVisible()
+  await page.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).click()
+  await page.getByRole('button', { name: /Ver pedido/ }).click()
+  await expect(page.getByRole('dialog').getByTestId('checkout-mode')).toContainText('Retirada')
+  await expect(page.getByRole('dialog').getByTestId('checkout-total')).toHaveText(/R\$\s*35,00/)
+})
+
+test('restaurante vê com clareza: Delivery x Retirada, taxa e forma de pagamento declarada', async ({ page, context }) => {
+  const cliente = await context.newPage()
+  const { orders } = await setup(cliente, { role: 'attendant', online: { open: true, pix: true } })
+  const pedir = async (modo: 'delivery' | 'pickup', nome: string) => {
+    await cliente.goto('/pedir')
+    if (modo === 'pickup') await cliente.getByRole('radio', { name: /Retirar no local/ }).click()
+    await cliente.getByTestId('prod-p1').getByRole('button', { name: 'Adicionar' }).click()
+    await cliente.getByRole('button', { name: /Ver pedido/ }).click()
+    await cliente.getByLabel('Seu nome').fill(nome)
+    await cliente.getByLabel('Telefone com DDD').fill('(92) 97777-0000')
+    if (modo === 'delivery') await cliente.getByLabel('Endereço de entrega').fill('Rua das Flores, 55, Centro')
+    await cliente.getByRole('button', { name: /Enviar pedido/ }).click()
+    await expect(cliente).toHaveURL(/\/pedir\/pedido\//)
+  }
+  await pedir('delivery', 'Entrega Pix')
+  await pedir('pickup', 'Retira Pix')
+
+  const staff = await context.newPage()
+  await setup(staff, { role: 'attendant', orders: structuredClone(orders), online: { open: true, pix: true } })
+  await staff.goto('/pedidos')
+  const entrega = staff.getByTestId('belt-order-1')
+  await expect(entrega).toContainText('Delivery · taxa R$ 5,00')
+  await expect(entrega).toContainText('Rua das Flores, 55')
+  await expect(entrega).toContainText('Pix · confira no banco · R$ 40,00')
+  const retira = staff.getByTestId('belt-order-2')
+  await expect(retira).toContainText('Retirada · não entregar')
+  await expect(retira).toContainText('Pix · confira no banco · R$ 35,00')
+  await expect(retira).not.toContainText('Delivery')
+
+  await staff.getByRole('radio', { name: /Lista/ }).click()
+  await expect(staff.getByTestId('order-1').getByTestId('tags-1')).toContainText('Delivery · taxa R$ 5,00')
+  await expect(staff.getByTestId('order-2').getByTestId('tags-2')).toContainText('Retirada · não entregar')
+
+  const cozinha = await context.newPage()
+  await setup(cozinha, { role: 'kitchen', orders: structuredClone(orders), online: { open: true, pix: true } })
+  await cozinha.goto('/cozinha')
+  await expect(cozinha.getByTestId('kitchen-order-1')).toContainText('Delivery')
+  await expect(cozinha.getByTestId('kitchen-order-2')).toContainText('Retirada · não entregar')
+})
+
+test('dono configura a chave Pix, vê o QR de teste e pode desligar', async ({ page }) => {
+  const { settingsState } = await setup(page, { role: 'owner' })
+  await page.goto('/configuracoes')
+  const box = page.getByTestId('pix-config')
+  await expect(box).toContainText('Sem chave, a opção Pix não aparece')
+  await box.getByLabel('Chave Pix').fill('(92) 99999-0000')
+  await box.getByLabel('Nome do recebedor').fill("Cordeiro's Refeições")
+  await box.getByLabel('Cidade').fill('Manaus')
+  await box.getByRole('button', { name: 'Salvar Pix' }).click()
+  await expect.poll(() => settingsState.pix_key).toBe('+5592999990000')
+  expect(settingsState.pix_name).toBe('CORDEIROS REFEICOES')
+  expect(settingsState.pix_city).toBe('MANAUS')
+  await expect(box.getByRole('img')).toBeVisible()
+  await expect(box).toContainText('Pix ativo')
+  await box.getByRole('button', { name: 'Desligar Pix' }).click()
+  await expect.poll(() => settingsState.pix_key).toBe(null)
 })

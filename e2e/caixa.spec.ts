@@ -200,3 +200,21 @@ test('janela de receber: a atualização automática da tela não rouba o foco d
   await expect(d.getByRole('status').filter({ hasText: 'Troco' })).toContainText(/R\$\s*65,00/) // 100 − 35
   await expect(d.getByRole('button', { name: 'Fechar' })).not.toBeFocused()
 })
+
+test('caixa: pedido com Pix declarado vem com o Pix escolhido e o aviso de conferir no banco', async ({ page }) => {
+  const pedidoPix = { ...tableOrder('x', 9, 4000, 5, 't1'), channel: 'delivery', dining_table_id: null, dining_tables: null, delivery_fee_cents: 500, customer_name: 'Ana', pay_with: 'pix', source: 'online' }
+  const pedidoTroco = { ...tableOrder('y', 10, 4000, 4, 't1'), channel: 'pickup', dining_table_id: null, dining_tables: null, customer_name: 'Beto', pay_with: 'cash', change_for_cents: 5000, source: 'online' }
+  const { calls } = await setup(page, { role: 'attendant', orders: [pedidoPix, pedidoTroco], cash: { open: true } })
+  await page.goto('/caixa')
+
+  await page.getByTestId('receivable-order:x').getByRole('button', { name: /Receber/ }).click()
+  const d = page.getByRole('dialog')
+  await expect(d.getByTestId('declared-pay')).toContainText('Pix')
+  await expect(d.getByTestId('declared-pay')).toContainText('extrato do banco')
+  await d.getByRole('button', { name: /Confirmar/ }).click()
+  await expect(page.getByText(/Recebido R\$\s*40,00/)).toBeVisible()
+  expect(calls.rpc.find((c) => c.name === 'pay_orders')!.body).toEqual({ p_order_ids: ['x'], p_payments: [{ method: 'pix', amount_cents: 4000 }] })
+
+  await page.getByTestId('receivable-order:y').getByRole('button', { name: /Receber/ }).click()
+  await expect(page.getByRole('dialog').getByTestId('declared-pay')).toContainText('Troco para R$ 50,00')
+})
